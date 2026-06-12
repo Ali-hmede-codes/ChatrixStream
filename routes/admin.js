@@ -115,7 +115,6 @@ module.exports = function(db, streamManager) {
 
         const channel = getChannelById.get(id);
         if (!channel) return res.status(404).json({ error: 'Channel not found' });
-        if (!channel.link_expires_at) return res.status(400).json({ error: 'Set a link expiry on this channel before generating codes' });
 
         const codes = generateInviteCodes(db, parseInt(id), count, channel.link_expires_at);
         res.json(codes);
@@ -129,7 +128,6 @@ module.exports = function(db, streamManager) {
 
         const channel = getChannelById.get(id);
         if (!channel) return res.status(404).json({ error: 'Channel not found' });
-        if (!channel.link_expires_at) return res.status(400).json({ error: 'Set a link expiry on this channel before generating codes' });
 
         const transaction = db.transaction(() => {
             deleteCodesByChannel.run(id);
