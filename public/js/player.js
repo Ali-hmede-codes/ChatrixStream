@@ -178,6 +178,7 @@
                 liveMaxLatencyDuration: 30
             });
 
+            videoEl.muted = true;
             mpegtsPlayer.attachMediaElement(videoEl);
             mpegtsPlayer.load();
             mpegtsPlayer.play();
@@ -199,13 +200,14 @@
             videoEl.addEventListener('playing', function() {
                 hideLoading();
                 if (videoEl.muted) {
-                    tryUnmute();
+                    unmuteBtn.classList.remove('hidden');
                 }
             }, { once: false });
 
         } else if (canPlayHlsNatively()) {
             useNativeHls = true;
 
+            videoEl.muted = true;
             var hlsUrl = window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
             videoEl.src = hlsUrl;
             videoEl.play();
@@ -213,7 +215,7 @@
             videoEl.addEventListener('loadeddata', function onLoaded() {
                 hideLoading();
                 if (videoEl.muted) {
-                    tryUnmute();
+                    unmuteBtn.classList.remove('hidden');
                 }
                 videoEl.removeEventListener('loadeddata', onLoaded);
             });
