@@ -6,11 +6,13 @@ const initDB = require('./db/init');
 const { validateSession } = require('./services/codeGenerator');
 const { seedAdminUsers } = require('./services/adminUser');
 const StreamManager = require('./services/streamManager');
+const HlsConverter = require('./services/hlsConverter');
 const rateLimiter = require('./middleware/rateLimiter');
 const adminRoutes = require('./routes/admin');
 const adminLoginRoutes = require('./routes/adminLogin');
 const authRoutes = require('./routes/auth');
 const streamRoutes = require('./routes/stream');
+const hlsRoutes = require('./routes/hls');
 const sseRoutes = require('./routes/sse');
 
 const db = initDB(process.env.DB_PATH);
@@ -20,6 +22,14 @@ const streamManager = new StreamManager({
     idleTimeout: parseInt(process.env.STREAM_IDLE_TIMEOUT_MS) || 30000,
     reconnectDelay: parseInt(process.env.STREAM_RECONNECT_DELAY_MS) || 3000,
     sourceTimeout: parseInt(process.env.STREAM_SOURCE_TIMEOUT_MS) || 10000
+});
+const hlsConverter = new HlsConverter({
+    tempDir: process.env.HLS_TEMP_DIR || undefined,
+    segmentDuration: parseInt(process.env.HLS_SEGMENT_DURATION) || 2,
+    listSize: parseInt(process.env.HLS_LIST_SIZE) || 6,
+    idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
+    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 3000,
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg'
 });
 
 const app = express();
@@ -52,6 +62,7 @@ app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager));
 app.use('/api/auth', redeemLimiter, authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
 app.use('/channel', streamLimiter, streamRoutes(db, streamManager));
+app.use('/hls', streamLimiter, hlsRoutes(db, hlsConverter));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -76,6 +87,7 @@ function cleanupExpired() {
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
         streamManager.stopAllStreamsForChannel(ch.id);
+        hlsConverter.stopAllForChannel(ch.id);
         db.prepare('DELETE FROM channels WHERE id = ?').run(ch.id);
     }
 
@@ -85,6 +97,17 @@ function cleanupExpired() {
 setInterval(cleanupExpired, 5 * 60 * 1000);
 
 const PORT = parseInt(process.env.PORT) || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`ChatrixStream server running on port ${PORT}`);
 });
+
+function gracefulShutdown() {
+    console.log('Shutting down...');
+    hlsConverter.stopAll();
+    server.close(() => {
+        process.exit(0);
+    });
+}
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

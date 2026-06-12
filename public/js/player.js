@@ -7,6 +7,7 @@
     let mpegtsPlayer = null;
     let reconnectTimer = null;
     let sseConnection = null;
+    let useNativeHls = false;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -22,6 +23,12 @@
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     const videoContainer = document.getElementById('video-container');
     const unmuteBtn = document.getElementById('unmute-btn');
+
+    function canPlayHlsNatively() {
+        var v = document.createElement('video');
+        return v.canPlayType('application/vnd.apple.mpegurl') !== '' ||
+               v.canPlayType('application/x-mpegURL') !== '';
+    }
 
     async function init() {
         const stored = localStorage.getItem(SESSION_KEY);
@@ -103,6 +110,11 @@
             mpegtsPlayer = null;
         }
 
+        if (useNativeHls) {
+            videoEl.removeAttribute('src');
+            videoEl.load();
+        }
+
         document.querySelectorAll('.quality-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.quality === newQuality);
         });
@@ -139,11 +151,13 @@
     function startStream(quality) {
         currentQuality = quality;
 
-        const streamUrl = window.location.origin + '/channel/' + channelInfo.channel_token + '/' + quality + '?session=' + sessionData.session_token;
-
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
         if (mpegts.isSupported()) {
+            useNativeHls = false;
+
+            var streamUrl = window.location.origin + '/channel/' + channelInfo.channel_token + '/' + quality + '?session=' + sessionData.session_token;
+
             mpegtsPlayer = mpegts.createPlayer({
                 type: 'mpegts',
                 url: streamUrl,
@@ -189,8 +203,37 @@
                 }
             }, { once: false });
 
+        } else if (canPlayHlsNatively()) {
+            useNativeHls = true;
+
+            var hlsUrl = window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
+            videoEl.src = hlsUrl;
+            videoEl.play();
+
+            videoEl.addEventListener('loadeddata', function onLoaded() {
+                hideLoading();
+                if (videoEl.muted) {
+                    tryUnmute();
+                }
+                videoEl.removeEventListener('loadeddata', onLoaded);
+            });
+
+            videoEl.addEventListener('error', function onError() {
+                showError('Stream Error', 'Failed to load the stream. The server may need ffmpeg installed for HLS conversion.');
+                videoEl.removeEventListener('error', onError);
+            });
+
+            videoEl.addEventListener('waiting', function() {
+                showLoading('Buffering...');
+            });
+
+            videoEl.addEventListener('playing', function onPlaying() {
+                hideLoading();
+                videoEl.removeEventListener('playing', onPlaying);
+            });
+
         } else {
-            showError('Unsupported', 'Your browser does not support MPEG-TS playback.');
+            showError('Unsupported', 'Your browser does not support MPEG-TS or HLS playback.');
         }
     }
 
@@ -202,6 +245,12 @@
             mpegtsPlayer.destroy();
             mpegtsPlayer = null;
         }
+
+        if (useNativeHls) {
+            videoEl.removeAttribute('src');
+            videoEl.load();
+        }
+
         startStream(currentQuality);
     }
 
@@ -247,6 +296,10 @@
                 mpegtsPlayer.detachMediaElement();
                 mpegtsPlayer.destroy();
                 mpegtsPlayer = null;
+            }
+            if (useNativeHls) {
+                videoEl.removeAttribute('src');
+                videoEl.load();
             }
             showError('Session Expired', data.error || 'Your access has expired. Please enter a new invite code.');
             errorBtn.onclick = function() {
