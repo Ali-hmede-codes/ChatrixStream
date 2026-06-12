@@ -16,4 +16,11 @@ function adminAuth(req, res, next) {
     next();
 }
 
-module.exports = adminAuth;
+function superAdminOnly(req, res, next) {
+    if (!req.adminUser || req.adminUser.role !== 'superadmin') {
+        return res.status(403).json({ error: 'Forbidden — superadmin access required' });
+    }
+    next();
+}
+
+module.exports = { adminAuth, superAdminOnly };

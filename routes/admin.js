@@ -1,6 +1,7 @@
 const express = require('express');
-const adminAuth = require('../middleware/adminAuth');
+const { adminAuth, superAdminOnly } = require('../middleware/adminAuth');
 const { generateChannelToken, generateInviteCodes } = require('../services/codeGenerator');
+const { hashPassword } = require('../services/adminUser');
 
 module.exports = function(db, streamManager) {
     const router = express.Router();
@@ -169,6 +170,77 @@ module.exports = function(db, streamManager) {
         const { token } = req.params;
         deleteSessionByToken.run(token);
         res.json({ deleted: true });
+    });
+
+    const getAllAdminUsers = db.prepare('SELECT id, username, role, created_at FROM admin_users ORDER BY id');
+    const getAdminUserById = db.prepare('SELECT id, username, role, created_at FROM admin_users WHERE id = ?');
+    const getAdminUserByUsername = db.prepare('SELECT id, username, role, created_at FROM admin_users WHERE username = ?');
+    const insertAdminUser = db.prepare('INSERT INTO admin_users (username, password, role) VALUES (?, ?, ?)');
+    const updateAdminUser = db.prepare('UPDATE admin_users SET username = COALESCE(?, username), role = COALESCE(?, role) WHERE id = ?');
+    const updateAdminPassword = db.prepare('UPDATE admin_users SET password = ? WHERE id = ?');
+    const deleteAdminUser = db.prepare('DELETE FROM admin_users WHERE id = ?');
+
+    router.get('/users', superAdminOnly, (req, res) => {
+        const users = getAllAdminUsers.all();
+        res.json(users);
+    });
+
+    router.post('/users', superAdminOnly, (req, res) => {
+        const { username, password, role } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+        if (!['superadmin', 'admin', 'moderator'].includes(role || 'admin')) return res.status(400).json({ error: 'Invalid role. Use superadmin, admin, or moderator' });
+
+        const existing = getAdminUserByUsername.get(username);
+        if (existing) return res.status(400).json({ error: 'Username already exists' });
+
+        const result = insertAdminUser.run(username, hashPassword(password), role || 'admin');
+        const user = getAdminUserById.get(result.lastInsertRowid);
+        res.json(user);
+    });
+
+    router.patch('/users/:id', superAdminOnly, (req, res) => {
+        const { id } = req.params;
+        const { username, role } = req.body;
+        if (!id) return res.status(400).json({ error: 'User ID is required' });
+
+        if (role && !['superadmin', 'admin', 'moderator'].includes(role)) return res.status(400).json({ error: 'Invalid role. Use superadmin, admin, or moderator' });
+
+        if (username) {
+            const existing = getAdminUserByUsername.get(username);
+            if (existing && existing.id != id) return res.status(400).json({ error: 'Username already taken' });
+        }
+
+        updateAdminUser.run(username || null, role || null, id);
+        const user = getAdminUserById.get(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        res.json(user);
+    });
+
+    router.post('/users/:id/change-password', superAdminOnly, (req, res) => {
+        const { id } = req.params;
+        const { password } = req.body;
+        if (!password) return res.status(400).json({ error: 'New password is required' });
+        if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+        const user = getAdminUserById.get(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        updateAdminPassword.run(hashPassword(password), id);
+        res.json({ success: true, message: 'Password updated' });
+    });
+
+    router.delete('/users/:id', superAdminOnly, (req, res) => {
+        const { id } = req.params;
+        const user = getAdminUserById.get(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.username === 'superadmin') return res.status(400).json({ error: 'Cannot delete the primary superadmin account' });
+
+        deleteAdminUser.run(id);
+        res.json({ deleted: true });
+    });
+
+    router.get('/current-user', (req, res) => {
+        res.json({ id: req.adminUser.id, username: req.adminUser.username, role: req.adminUser.role });
     });
 
     return router;

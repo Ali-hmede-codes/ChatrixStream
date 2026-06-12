@@ -4,8 +4,15 @@
   "description": "Live stream restream platform with invite code authentication",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "pm2 start ecosystem.config.js --no-daemon",
+    "dev": "node --watch server.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:delete": "pm2 delete ecosystem.config.js",
+    "pm2:logs": "pm2 logs chatrixstream",
+    "pm2:monit": "pm2 monit",
+    "pm2:status": "pm2 status"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

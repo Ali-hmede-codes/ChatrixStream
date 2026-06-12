@@ -4,7 +4,9 @@
 
     let authToken = '';
     let channels = [];
+    let adminUsers = [];
     let currentView = 'channels';
+    var editingUserId = null;
 
     const adminLogin = document.getElementById('admin-login');
     const dashboard = document.getElementById('dashboard');
@@ -14,6 +16,7 @@
     const loginError = document.getElementById('login-error');
     const logoutBtn = document.getElementById('logout-btn');
     const createChannelBtn = document.getElementById('create-channel-btn');
+    const addUserBtn = document.getElementById('add-user-btn');
     const confirmCreateBtn = document.getElementById('confirm-create-btn');
     const emptyCreateBtn = document.getElementById('empty-create-btn');
     const channelsContainer = document.getElementById('channels-container');
@@ -32,6 +35,20 @@
     const expirySaveBtn = document.getElementById('expiry-save-btn');
     const expiryClearBtn = document.getElementById('expiry-clear-btn');
     var expiryEditChannelId = null;
+    var navUsers = document.getElementById('nav-users');
+    var usersViewSection = document.getElementById('users-view');
+    var usersContainer = document.getElementById('users-container');
+    var usersEmptyState = document.getElementById('users-empty-state');
+    var addUserModal = document.getElementById('add-user-modal');
+    var editUserModal = document.getElementById('edit-user-modal');
+    var changePasswordModal = document.getElementById('change-password-modal');
+    var addUserUsername = document.getElementById('add-user-username');
+    var addUserPassword = document.getElementById('add-user-password');
+    var addUserRole = document.getElementById('add-user-role');
+    var editUserUsername = document.getElementById('edit-user-username');
+    var editUserRole = document.getElementById('edit-user-role');
+    var changePwUsernameDisplay = document.getElementById('change-pw-username-display');
+    var changePwNewPassword = document.getElementById('change-pw-new-password');
 
     function init() {
         const stored = localStorage.getItem(TOKEN_KEY);
@@ -92,7 +109,9 @@
                 showToast('Welcome back, ' + data.username, 'success');
                 showDashboard();
                 updateAdminInfo();
+                checkCurrentUserRole();
                 loadChannels();
+                loadUsers();
             } else {
                 var errData = await res.json();
                 loginError.textContent = errData.error || 'Invalid credentials';
@@ -118,7 +137,9 @@
             if (res.status === 200) {
                 showDashboard();
                 updateAdminInfo();
+                checkCurrentUserRole();
                 loadChannels();
+                loadUsers();
             } else {
                 localStorage.removeItem(TOKEN_KEY);
                 localStorage.removeItem(ADMIN_INFO_KEY);
@@ -138,7 +159,9 @@
         };
         if (options.body) options.body = JSON.stringify(options.body);
         var res = await fetch('/api/admin' + path, options);
-        return res.json();
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
     }
 
     async function loadChannels() {
@@ -242,18 +265,25 @@
         });
         var topBarTitle = document.querySelector('.page-title');
         var createBtn = document.getElementById('create-channel-btn');
+        channelsListSection.classList.add('hidden');
+        streamsViewSection.classList.add('hidden');
+        if (usersViewSection) usersViewSection.classList.add('hidden');
+        createBtn.classList.add('hidden');
+        if (addUserBtn) addUserBtn.classList.add('hidden');
         if (view === 'channels') {
             topBarTitle.textContent = 'Channels';
             createBtn.classList.remove('hidden');
             channelsListSection.classList.remove('hidden');
-            streamsViewSection.classList.add('hidden');
             renderChannels();
-        } else {
+        } else if (view === 'streams') {
             topBarTitle.textContent = 'Streams & Qualities';
-            createBtn.classList.add('hidden');
-            channelsListSection.classList.add('hidden');
             streamsViewSection.classList.remove('hidden');
             renderStreamsView();
+        } else if (view === 'users') {
+            topBarTitle.textContent = 'Users';
+            if (addUserBtn) addUserBtn.classList.remove('hidden');
+            if (usersViewSection) usersViewSection.classList.remove('hidden');
+            renderUsers();
         }
     }
 
@@ -603,6 +633,21 @@
             loadChannels();
             return;
         }
+
+        if (action === 'edit-user') {
+            openEditUserModal(parseInt(btn.dataset.userId), btn.dataset.userUsername, btn.dataset.userRole);
+            return;
+        }
+
+        if (action === 'change-pw-user') {
+            openChangePasswordModal(parseInt(btn.dataset.userId), btn.dataset.userUsername);
+            return;
+        }
+
+        if (action === 'delete-user') {
+            deleteUser(parseInt(btn.dataset.userId), btn.dataset.userUsername);
+            return;
+        }
     });
 
     document.addEventListener('click', function(e) {
@@ -644,8 +689,162 @@
     loginBtn.addEventListener('click', login);
     logoutBtn.addEventListener('click', logout);
     createChannelBtn.addEventListener('click', openCreateModal);
+    if (addUserBtn) addUserBtn.addEventListener('click', openAddUserModal);
     emptyCreateBtn.addEventListener('click', openCreateModal);
     confirmCreateBtn.addEventListener('click', createChannel);
+    if (document.getElementById('users-empty-add-btn')) document.getElementById('users-empty-add-btn').addEventListener('click', openAddUserModal);
+    if (document.getElementById('confirm-add-user-btn')) document.getElementById('confirm-add-user-btn').addEventListener('click', confirmAddUser);
+    if (document.getElementById('confirm-edit-user-btn')) document.getElementById('confirm-edit-user-btn').addEventListener('click', confirmEditUser);
+    if (document.getElementById('confirm-change-pw-btn')) document.getElementById('confirm-change-pw-btn').addEventListener('click', confirmChangePassword);
 
-    init();
+    async function loadUsers() {
+        try {
+            adminUsers = await adminFetch('/users');
+        } catch (e) {
+            adminUsers = [];
+        }
+    }
+
+    function renderUsers() {
+        usersContainer.innerHTML = '';
+        if (!adminUsers || adminUsers.length === 0) {
+            usersEmptyState.classList.remove('hidden');
+            return;
+        }
+        usersEmptyState.classList.add('hidden');
+
+        adminUsers.forEach(function(user) {
+            var card = document.createElement('div');
+            card.className = 'user-card';
+            var roleBadgeClass = user.role === 'superadmin' ? 'role-superadmin' : (user.role === 'admin' ? 'role-admin' : 'role-moderator');
+            card.innerHTML =
+                '<div class="user-header">' +
+                    '<div class="user-avatar">' + user.username.substring(0, 2).toUpperCase() + '</div>' +
+                    '<div class="user-details">' +
+                        '<span class="user-name">' + user.username + '</span>' +
+                        '<span class="user-role-badge ' + roleBadgeClass + '">' + user.role + '</span>' +
+                    '</div>' +
+                    '<span class="user-id">ID: ' + user.id + '</span>' +
+                '</div>' +
+                '<div class="user-meta">' +
+                    '<span class="meta-tag"><span class="meta-label">Created:</span> <span class="meta-value">' + formatDate(user.created_at) + '</span></span>' +
+                '</div>' +
+                '<div class="user-actions">' +
+                    '<button class="btn-secondary" data-action="edit-user" data-user-id="' + user.id + '" data-user-username="' + user.username + '" data-user-role="' + user.role + '">Edit</button>' +
+                    '<button class="btn-secondary" data-action="change-pw-user" data-user-id="' + user.id + '" data-user-username="' + user.username + '">Change Password</button>' +
+                    (user.username !== 'superadmin' ? '<button class="btn-danger" data-action="delete-user" data-user-id="' + user.id + '" data-user-username="' + user.username + '">Delete</button>' : '') +
+                '</div>';
+            usersContainer.appendChild(card);
+        });
+    }
+
+    function openAddUserModal() {
+        addUserUsername.value = '';
+        addUserPassword.value = '';
+        addUserRole.value = 'admin';
+        addUserModal.classList.remove('hidden');
+        addUserUsername.focus();
+    }
+
+    function closeAddUserModal() {
+        addUserModal.classList.add('hidden');
+    }
+
+    async function confirmAddUser() {
+        var username = addUserUsername.value.trim();
+        var password = addUserPassword.value.trim();
+        var role = addUserRole.value;
+        if (!username || !password) {
+            showToast('Username and password are required', 'error');
+            return;
+        }
+        try {
+            var user = await adminFetch('/users', { method: 'POST', body: { username: username, password: password, role: role } });
+            showToast('User "' + username + '" created', 'success');
+            closeAddUserModal();
+            loadUsers().then(function() { renderUsers(); });
+        } catch (e) {
+            showToast(e.message || 'Failed to create user', 'error');
+        }
+    }
+
+    function openEditUserModal(userId, username, role) {
+        editingUserId = userId;
+        editUserUsername.value = username;
+        editUserRole.value = role;
+        editUserModal.classList.remove('hidden');
+        editUserUsername.focus();
+    }
+
+    function closeEditUserModal() {
+        editUserModal.classList.add('hidden');
+        editingUserId = null;
+    }
+
+    async function confirmEditUser() {
+        var username = editUserUsername.value.trim();
+        var role = editUserRole.value;
+        if (!username) {
+            showToast('Username is required', 'error');
+            return;
+        }
+        try {
+            var user = await adminFetch('/users/' + editingUserId, { method: 'PATCH', body: { username: username, role: role } });
+            showToast('User "' + username + '" updated', 'success');
+            closeEditUserModal();
+            loadUsers().then(function() { renderUsers(); });
+        } catch (e) {
+            showToast(e.message || 'Failed to update user', 'error');
+        }
+    }
+
+    function openChangePasswordModal(userId, username) {
+        editingUserId = userId;
+        changePwUsernameDisplay.value = username;
+        changePwNewPassword.value = '';
+        changePasswordModal.classList.remove('hidden');
+        changePwNewPassword.focus();
+    }
+
+    function closeChangePasswordModal() {
+        changePasswordModal.classList.add('hidden');
+        editingUserId = null;
+    }
+
+    async function confirmChangePassword() {
+        var password = changePwNewPassword.value.trim();
+        if (!password || password.length < 6) {
+            showToast('Password must be at least 6 characters', 'error');
+            return;
+        }
+        try {
+            await adminFetch('/users/' + editingUserId + '/change-password', { method: 'POST', body: { password: password } });
+            showToast('Password updated', 'success');
+            closeChangePasswordModal();
+        } catch (e) {
+            showToast(e.message || 'Failed to change password', 'error');
+        }
+    }
+
+    async function deleteUser(userId, username) {
+        if (!confirm('Delete user "' + username + '"? They will immediately lose access.')) return;
+        try {
+            await adminFetch('/users/' + userId, { method: 'DELETE' });
+            showToast('User "' + username + '" deleted', 'success');
+            loadUsers().then(function() { renderUsers(); });
+        } catch (e) {
+            showToast(e.message || 'Failed to delete user', 'error');
+        }
+    }
+
+    async function checkCurrentUserRole() {
+        try {
+            var info = await adminFetch('/current-user');
+            if (navUsers) {
+                navUsers.style.display = info.role === 'superadmin' ? '' : 'none';
+            }
+        } catch (e) {
+            if (navUsers) navUsers.style.display = 'none';
+        }
+    }
 })();

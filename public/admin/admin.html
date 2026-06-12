@@ -51,6 +51,10 @@
                         <span class="nav-icon">&#9733;</span>
                         Streams & Qualities
                     </a>
+                    <a class="nav-item" data-section="users" id="nav-users">
+                        <span class="nav-icon">&#9824;</span>
+                        Users
+                    </a>
                 </nav>
                 <div class="sidebar-footer">
                     <div class="admin-info">
@@ -67,9 +71,14 @@
             <main class="main-content">
                 <div class="top-bar">
                     <h2 class="page-title">Channels</h2>
-                    <button id="create-channel-btn" class="btn-primary">
-                        <span class="btn-icon">+</span> New Channel
-                    </button>
+                    <div class="top-bar-actions">
+                        <button id="create-channel-btn" class="btn-primary">
+                            <span class="btn-icon">+</span> New Channel
+                        </button>
+                        <button id="add-user-btn" class="btn-primary hidden">
+                            <span class="btn-icon">+</span> Add User
+                        </button>
+                    </div>
                 </div>
 
                 <section id="create-channel" class="hidden">
@@ -139,8 +148,105 @@
                 <section id="streams-view" class="hidden">
                     <div id="streams-container"></div>
                 </section>
+
+                <section id="users-view" class="hidden">
+                    <div id="users-container"></div>
+                    <div id="users-empty-state" class="empty-state hidden">
+                        <div class="empty-icon">&#9824;</div>
+                        <h4>No admin users</h4>
+                        <p>Add your first admin user</p>
+                        <button class="btn-primary" id="users-empty-add-btn">Add User</button>
+                    </div>
+                </section>
             </main>
         </div>
+
+        <section id="add-user-modal" class="hidden">
+            <div class="modal-overlay" data-close-modal="add-user-modal">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h3>Add New User</h3>
+                        <button class="modal-close" data-close-modal="add-user-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="input-field">
+                            <label for="add-user-username">Username</label>
+                            <input type="text" id="add-user-username" placeholder="Enter username" autocomplete="off">
+                        </div>
+                        <div class="input-field">
+                            <label for="add-user-password">Password</label>
+                            <input type="password" id="add-user-password" placeholder="Enter password" autocomplete="off">
+                        </div>
+                        <div class="input-field">
+                            <label for="add-user-role">Role</label>
+                            <select id="add-user-role">
+                                <option value="admin">Admin</option>
+                                <option value="moderator">Moderator</option>
+                                <option value="superadmin">Super Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-ghost" data-close-modal="add-user-modal">Cancel</button>
+                        <button class="btn-primary" id="confirm-add-user-btn">Add User</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="edit-user-modal" class="hidden">
+            <div class="modal-overlay" data-close-modal="edit-user-modal">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h3>Edit User</h3>
+                        <button class="modal-close" data-close-modal="edit-user-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="input-field">
+                            <label for="edit-user-username">Username</label>
+                            <input type="text" id="edit-user-username" placeholder="Enter username" autocomplete="off">
+                        </div>
+                        <div class="input-field">
+                            <label for="edit-user-role">Role</label>
+                            <select id="edit-user-role">
+                                <option value="admin">Admin</option>
+                                <option value="moderator">Moderator</option>
+                                <option value="superadmin">Super Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-ghost" data-close-modal="edit-user-modal">Cancel</button>
+                        <button class="btn-primary" id="confirm-edit-user-btn">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="change-password-modal" class="hidden">
+            <div class="modal-overlay" data-close-modal="change-password-modal">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h3>Change Password</h3>
+                        <button class="modal-close" data-close-modal="change-password-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="input-field">
+                            <label for="change-pw-username-display">User</label>
+                            <input type="text" id="change-pw-username-display" disabled>
+                        </div>
+                        <div class="input-field">
+                            <label for="change-pw-new-password">New Password</label>
+                            <input type="password" id="change-pw-new-password" placeholder="Enter new password" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-ghost" data-close-modal="change-password-modal">Cancel</button>
+                        <button class="btn-primary" id="confirm-change-pw-btn">Update Password</button>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <div id="toast-container"></div>
     </div>
