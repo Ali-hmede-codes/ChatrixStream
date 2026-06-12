@@ -48,6 +48,19 @@
     var editUserUsername = document.getElementById('edit-user-username');
     var editUserRole = document.getElementById('edit-user-role');
     var changePwUsernameDisplay = document.getElementById('change-pw-username-display');
+    var menuToggle = document.getElementById('menu-toggle');
+    var sidebar = document.querySelector('.sidebar');
+    var mobileOverlay = document.getElementById('mobile-overlay');
+
+    function openMobileMenu() {
+        sidebar.classList.add('open');
+        mobileOverlay.classList.remove('hidden');
+    }
+
+    function closeMobileMenu() {
+        sidebar.classList.remove('open');
+        mobileOverlay.classList.add('hidden');
+    }
     var changePwNewPassword = document.getElementById('change-pw-new-password');
 
     function init() {
@@ -681,8 +694,12 @@
         var navItem = e.target.closest('.nav-item[data-section]');
         if (navItem) {
             switchView(navItem.dataset.section);
+            closeMobileMenu();
         }
     });
+
+    menuToggle.addEventListener('click', openMobileMenu);
+    mobileOverlay.addEventListener('click', closeMobileMenu);
 
     usernameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') passwordInput.focus(); });
     passwordInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') login(); });
