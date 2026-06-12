@@ -1,0 +1,19 @@
+{
+  "name": "chatrixstream",
+  "version": "1.0.0",
+  "description": "Live stream restream platform with invite code authentication",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "follow-redirects": "^1.15.0",
+    "jsonwebtoken": "^9.0.3"
+  }
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatrixStream — Player</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div id="player-app">
+        <div id="error-overlay" class="hidden">
+            <div class="error-content">
+                <h2 id="error-title">Session Expired</h2>
+                <p id="error-desc">Your access has expired. Please enter a new invite code.</p>
+                <button id="error-btn" onclick="window.location.href='/'">Get New Code</button>
+            </div>
+        </div>
+
+        <div id="loading-overlay" class="hidden">
+            <div class="spinner"></div>
+            <p id="loading-text">Connecting to stream...</p>
+        </div>
+
+        <div id="video-container">
+            <video id="video-player" autoplay playsinline></video>
+            <button id="unmute-btn" class="hidden" title="Unmute">&#x1F50A;</button>
+
+            <div id="quality-bar">
+                <span id="channel-name"></span>
+                <div id="quality-buttons"></div>
+                <button id="fullscreen-btn" title="Fullscreen">&#x26F6;</button>
+            </div>
+
+            <div id="expiry-notice" class="hidden">
+                <span id="expiry-text"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
+    <script src="/js/player.js"></script>
+</body>
+</html>

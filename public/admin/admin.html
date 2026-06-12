@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatrixStream — Admin</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="./css/admin.css">
+</head>
+<body>
+    <div id="admin-app">
+        <div id="admin-login">
+            <div class="login-wrapper">
+                <div class="login-card">
+                    <div class="login-logo">
+                        <div class="logo-icon">CS</div>
+                        <h1>ChatrixStream</h1>
+                        <p class="subtitle">Admin Dashboard</p>
+                    </div>
+                    <div class="login-form">
+                        <div class="input-field">
+                            <label for="username-input">Username</label>
+                            <input type="text" id="username-input" placeholder="Enter username" autocomplete="off" autofocus>
+                        </div>
+                        <div class="input-field">
+                            <label for="password-input">Password</label>
+                            <input type="password" id="password-input" placeholder="Enter password" autocomplete="off">
+                        </div>
+                        <button id="login-btn" class="btn-primary btn-full">
+                            <span class="btn-text">Sign In</span>
+                            <span class="btn-spinner hidden"></span>
+                        </button>
+                        <p id="login-error" class="error hidden"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="dashboard" class="hidden">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo-icon small">CS</div>
+                    <span class="sidebar-title">ChatrixStream</span>
+                </div>
+                <nav class="sidebar-nav">
+                    <a class="nav-item active" data-section="channels">
+                        <span class="nav-icon">&#9656;</span>
+                        Channels
+                    </a>
+                    <a class="nav-item" data-section="streams">
+                        <span class="nav-icon">&#9733;</span>
+                        Streams & Qualities
+                    </a>
+                </nav>
+                <div class="sidebar-footer">
+                    <div class="admin-info">
+                        <div class="admin-avatar" id="admin-avatar"></div>
+                        <div class="admin-details">
+                            <span class="admin-name" id="admin-name"></span>
+                            <span class="admin-role" id="admin-role"></span>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="btn-ghost">Sign Out</button>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <div class="top-bar">
+                    <h2 class="page-title">Channels</h2>
+                    <button id="create-channel-btn" class="btn-primary">
+                        <span class="btn-icon">+</span> New Channel
+                    </button>
+                </div>
+
+                <section id="create-channel" class="hidden">
+                    <div class="modal-overlay" data-close-modal="create-channel">
+                        <div class="modal-card">
+                            <div class="modal-header">
+                                <h3>Create New Channel</h3>
+                                <button class="modal-close" data-close-modal="create-channel">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="input-field">
+                                    <label for="new-channel-name">Channel Name</label>
+                                    <input type="text" id="new-channel-name" placeholder="e.g. Sports Live">
+                                </div>
+                                <div class="input-field">
+                                    <label for="new-channel-stream-url">Main Stream URL <span class="field-hint">(primary/source stream)</span></label>
+                                    <input type="text" id="new-channel-stream-url" placeholder="e.g. https://stream.example.com/live/channel.m3u8">
+                                </div>
+                                <div class="input-field">
+                                    <label for="new-channel-expiry">Link Expiry <span class="field-hint">(required for codes to work)</span></label>
+                                    <input type="datetime-local" id="new-channel-expiry">
+                                </div>
+                                <p class="form-note">Invite codes will expire when the channel link expires. Set an expiry date to enable code generation.</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-ghost" data-close-modal="create-channel">Cancel</button>
+                                <button class="btn-primary" id="confirm-create-btn">Create Channel</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="expiry-modal" class="hidden">
+                    <div class="modal-overlay" data-close-modal="expiry-modal">
+                        <div class="modal-card">
+                            <div class="modal-header">
+                                <h3>Change Expiry</h3>
+                                <button class="modal-close" data-close-modal="expiry-modal">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="input-field">
+                                    <label for="expiry-datetime-input">Expiry Date & Time</label>
+                                    <input type="datetime-local" id="expiry-datetime-input">
+                                </div>
+                                <p class="form-note">Set a new expiry or clear it to make the link permanent. Codes will inherit this expiry.</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-danger" id="expiry-clear-btn">Clear (Never Expire)</button>
+                                <button class="btn-ghost" data-close-modal="expiry-modal">Cancel</button>
+                                <button class="btn-primary" id="expiry-save-btn">Save Expiry</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="channels-list">
+                    <div id="stats-bar" class="stats-bar"></div>
+                    <div id="channels-container"></div>
+                    <div id="empty-state" class="empty-state hidden">
+                        <div class="empty-icon">&#9656;</div>
+                        <h4>No channels yet</h4>
+                        <p>Create your first channel to start streaming</p>
+                        <button class="btn-primary" id="empty-create-btn">Create Channel</button>
+                    </div>
+                </section>
+
+                <section id="streams-view" class="hidden">
+                    <div id="streams-container"></div>
+                </section>
+            </main>
+        </div>
+
+        <div id="toast-container"></div>
+    </div>
+    <script src="./js/admin.js"></script>
+</body>
+</html>
