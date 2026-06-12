@@ -12,8 +12,6 @@ module.exports = {
       node_args: [
         '--max-old-space-size=8192',
         '--max-semi-space-size=256',
-        '--optimize-for-size=false',
-        '--compilation-cache=on',
       ],
 
       env: {
