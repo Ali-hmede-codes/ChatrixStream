@@ -20,6 +20,8 @@
     let wasPlayingBeforeHidden = false;
     let isQualitySwitching = false;
     let consecutiveMediaErrors = 0;
+    let sessionCheckInterval = null;
+    let sessionExpired = false;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -110,6 +112,7 @@
 
         buildQualityButtons(channelInfo.qualities);
         connectSSE();
+        startSessionCheck();
 
         // Pre-warm all qualities: start FFmpeg processes for all qualities
         // so quality switching is instant
@@ -692,14 +695,7 @@
 
         sseConnection.addEventListener('session_expired', function(e) {
             var data = JSON.parse(e.data);
-            localStorage.removeItem(SESSION_KEY);
-            destroyPlayer();
-            showError('Session Expired', data.error || 'Your access has expired. Please enter a new invite code.');
-            errorBtn.onclick = function() {
-                window.location.href = '/';
-            };
-            sseConnection.close();
-            sseConnection = null;
+            handleSessionExpired(data.error || 'Your access has expired. Please enter a new invite code.');
         });
 
         sseConnection.addEventListener('expiring_soon', function(e) {
@@ -716,9 +712,50 @@
                 sseConnection = null;
             }
             setTimeout(function() {
-                if (sessionData) connectSSE();
+                if (sessionData && !sessionExpired) connectSSE();
             }, 5000);
         };
+    }
+
+    function startSessionCheck() {
+        // Independent periodic session validation (fallback if SSE drops)
+        // Checks every 30 seconds if the session is still valid
+        if (sessionCheckInterval) clearInterval(sessionCheckInterval);
+        sessionCheckInterval = setInterval(function() {
+            if (!sessionData || sessionExpired) return;
+            fetch('/api/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_token: sessionData.session_token })
+            }).then(function(res) { return res.json(); }).then(function(result) {
+                if (!result.valid) {
+                    handleSessionExpired(result.error || 'Session expired');
+                }
+            }).catch(function() {
+                // Network error - don't kill the session, SSE will handle it
+            });
+        }, 30000);
+    }
+
+    function handleSessionExpired(reason) {
+        if (sessionExpired) return; // Already handled
+        sessionExpired = true;
+
+        localStorage.removeItem(SESSION_KEY);
+        destroyPlayer();
+        showError('Session Expired', reason || 'Your access has expired. Please enter a new invite code.');
+        errorBtn.onclick = function() {
+            window.location.href = '/';
+        };
+
+        if (sseConnection) {
+            sseConnection.close();
+            sseConnection = null;
+        }
+        if (sessionCheckInterval) {
+            clearInterval(sessionCheckInterval);
+            sessionCheckInterval = null;
+        }
     }
 
     var isFullscreenTransition = false;
