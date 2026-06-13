@@ -157,7 +157,7 @@ class HlsConverter {
         args.push('-f', 'hls');
         args.push('-hls_time', String(this.segmentDuration));
         args.push('-hls_list_size', String(this.listSize));
-        args.push('-hls_flags', 'delete_segments');
+        args.push('-hls_flags', 'delete_segments+program_date_time');
         args.push('-hls_playlist_type', 'event');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
@@ -304,9 +304,13 @@ class HlsConverter {
 
     rewriteManifest(manifestContent, sessionToken) {
         let hasPlaylistType = false;
+        let hasIndependentSegments = false;
         const lines = manifestContent.split('\n').map(line => {
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
                 hasPlaylistType = true;
+            }
+            if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
+                hasIndependentSegments = true;
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
                 return line + '?session=' + sessionToken;
@@ -314,13 +318,17 @@ class HlsConverter {
             return line;
         });
 
+        const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
+        const insertIdx = versionIdx !== -1 ? versionIdx + 1 : 1;
+
         if (!hasPlaylistType) {
-            const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
-            if (versionIdx !== -1) {
-                lines.splice(versionIdx + 1, 0, '#EXT-X-PLAYLIST-TYPE:EVENT');
-            } else {
-                lines.splice(1, 0, '#EXT-X-PLAYLIST-TYPE:EVENT');
-            }
+            lines.splice(insertIdx, 0, '#EXT-X-PLAYLIST-TYPE:EVENT');
+        }
+
+        if (!hasIndependentSegments) {
+            const ptIdx = lines.findIndex(l => l.startsWith('#EXT-X-PLAYLIST-TYPE'));
+            const indInsertIdx = ptIdx !== -1 ? ptIdx : insertIdx;
+            lines.splice(indInsertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
 
         return lines.join('\n');

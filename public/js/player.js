@@ -28,6 +28,12 @@
     const videoContainer = document.getElementById('video-container');
     const unmuteBtn = document.getElementById('unmute-btn');
 
+    function shouldUseNativeHls() {
+        var v = document.createElement('video');
+        return v.canPlayType('application/vnd.apple.mpegurl') === 'probably' ||
+               v.canPlayType('application/x-mpegURL') === 'probably';
+    }
+
     function canPlayHlsNatively() {
         var v = document.createElement('video');
         return v.canPlayType('application/vnd.apple.mpegurl') !== '' ||
@@ -177,7 +183,12 @@
         currentQuality = quality;
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
-        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        if (shouldUseNativeHls()) {
+            useNativeHls = true;
+            nativeRetryCount = 0;
+            startNativeStream(quality);
+
+        } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
             useNativeHls = false;
 
             var hlsUrl = getHlsUrl(quality);
@@ -281,12 +292,15 @@
         }
 
         var loadingHidden = false;
+        var nativeStallCount = 0;
+        var maxNativeStalls = 5;
 
         function tryHideLoading() {
             if (!loadingHidden) {
                 loadingHidden = true;
                 hideLoading();
                 nativeHasPlayed = true;
+                nativeStallCount = 0;
                 if (videoEl.muted) {
                     unmuteBtn.classList.remove('hidden');
                 }
@@ -300,6 +314,21 @@
         }
         function onWaiting() {
             if (!nativeHasPlayed) showLoading('Buffering...');
+        }
+        function onStalled() {
+            nativeStallCount++;
+            if (nativeStallCount > maxNativeStalls && nativeHasPlayed) {
+                console.warn('Native HLS stalled too many times, reconnecting...');
+                reconnectNativeStream(quality);
+            } else if (!nativeHasPlayed) {
+                showLoading('Buffering...');
+            }
+        }
+        function onEnded() {
+            if (nativeHasPlayed) {
+                console.warn('Native HLS live stream ended unexpectedly, reconnecting...');
+                reconnectNativeStream(quality);
+            }
         }
         function onError() {
             nativeRetryCount++;
@@ -326,6 +355,8 @@
         videoEl.addEventListener('playing', onPlaying);
         videoEl.addEventListener('timeupdate', onTimeUpdate);
         videoEl.addEventListener('waiting', onWaiting);
+        videoEl.addEventListener('stalled', onStalled);
+        videoEl.addEventListener('ended', onEnded);
         videoEl.addEventListener('error', onError);
 
         currentNativeCleanup = function() {
@@ -335,8 +366,24 @@
             videoEl.removeEventListener('playing', onPlaying);
             videoEl.removeEventListener('timeupdate', onTimeUpdate);
             videoEl.removeEventListener('waiting', onWaiting);
+            videoEl.removeEventListener('stalled', onStalled);
+            videoEl.removeEventListener('ended', onEnded);
             videoEl.removeEventListener('error', onError);
         };
+    }
+
+    function reconnectNativeStream(quality) {
+        if (currentNativeCleanup) {
+            currentNativeCleanup();
+            currentNativeCleanup = null;
+        }
+        showLoading('Reconnecting...');
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        reconnectTimer = setTimeout(function() {
+            reconnectTimer = null;
+            startNativeStream(quality);
+        }, 3000);
     }
 
     function scheduleReconnect() {
