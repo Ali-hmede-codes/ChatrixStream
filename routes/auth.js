@@ -78,6 +78,13 @@ module.exports = function(db) {
         });
     });
 
+    router.get('/free-channels', (req, res) => {
+        const channels = db.prepare(
+            'SELECT id, channel_token, name FROM channels WHERE code_required = 0 AND (link_expires_at IS NULL OR link_expires_at > ?)'
+        ).all(new Date().toISOString());
+        res.json(channels);
+    });
+
     router.post('/session', (req, res) => {
         const { session_token } = req.body;
         if (!session_token) return res.json({ valid: false, error: 'No session token provided' });

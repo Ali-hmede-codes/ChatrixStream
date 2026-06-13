@@ -2,6 +2,7 @@
     const SESSION_KEY = 'chatrix_session';
 
     const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loading-text');
     const codeForm = document.getElementById('code-form');
     const codeInput = document.getElementById('code-input');
     const watchBtn = document.getElementById('watch-btn');
@@ -38,7 +39,6 @@
             localStorage.removeItem(SESSION_KEY);
         }
 
-        // If we have a channel token from URL, try direct access (for codeless channels)
         if (channelTokenFromUrl) {
             showLoading();
             try {
@@ -49,7 +49,6 @@
                 const result = await res.json();
 
                 if (result.session_token) {
-                    // Channel allows free access — auto-created session
                     localStorage.setItem(SESSION_KEY, JSON.stringify({
                         session_token: result.session_token,
                         channel_token: result.channel_token
@@ -58,10 +57,8 @@
                     return;
                 }
 
-                // Channel requires a code — show the code form
                 if (result.error === 'This channel requires an invite code') {
                     showCodeForm();
-                    // Update subtitle to show channel-specific messaging
                     var subtitle = document.querySelector('.subtitle');
                     if (subtitle) {
                         subtitle.textContent = 'Enter your invite code to start watching';
@@ -69,7 +66,6 @@
                     return;
                 }
 
-                // Other errors (expired, not found)
                 showCodeForm();
                 showError(result.error || 'Channel not available');
                 return;
@@ -79,6 +75,18 @@
                 return;
             }
         }
+
+        // No channel token in URL — try to find free-access channels
+        try {
+            const res = await fetch('/api/auth/free-channels');
+            const freeChannels = await res.json();
+
+            if (freeChannels && freeChannels.length > 0) {
+                // Auto-redirect to the first free-access channel
+                window.location.href = '/channel/' + freeChannels[0].channel_token;
+                return;
+            }
+        } catch (e) {}
 
         showCodeForm();
     }
