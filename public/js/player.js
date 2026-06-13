@@ -6,8 +6,8 @@
     let currentQuality = null;
     let hlsPlayer = null;
     let reconnectTimer = null;
-    let reconnectBackoff = 3000;
-    let maxReconnectBackoff = 30000;
+    let reconnectBackoff = 2000;
+    let maxReconnectBackoff = 15000;
     let sseConnection = null;
     let useNativeHls = false;
     let nativeRetryCount = 0;
@@ -121,7 +121,7 @@
             reconnectTimer = null;
         }
         nativeRetryCount = 0;
-        reconnectBackoff = 3000;
+        reconnectBackoff = 2000;
 
         if (hlsPlayer) {
             hlsPlayer.destroy();
@@ -213,11 +213,6 @@
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
-                            if (data.details === 'manifestLoadError' && data.response && data.response.code === 503) {
-                                console.warn('Stream not ready (503), will auto-retry...');
-                                hlsPlayer.startLoad(2000);
-                                return;
-                            }
                             console.warn('Fatal network error, reconnecting with backoff...');
                             scheduleReconnect();
                             break;
@@ -231,6 +226,8 @@
                             showError('Stream Error', 'An unrecoverable error occurred. Please try again.');
                             break;
                     }
+                } else if (data.details === 'manifestLoadError' || data.details === 'levelLoadError') {
+                    showLoading('Stream starting, waiting...');
                 }
             });
 

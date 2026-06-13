@@ -63,11 +63,11 @@ module.exports = function(db, hlsConverter) {
         const manifest = hlsConverter.getManifest(validation.channel.id, validation.quality.quality_label);
         if (!manifest) {
             res.writeHead(503, {
-                'Content-Type': 'application/vnd.apple.mpegurl',
+                'Content-Type': 'application/json',
                 'Retry-After': '2',
                 'Access-Control-Allow-Origin': '*'
             });
-            return res.end('#EXTM3U\n#EXT-X-VERSION:3\n');
+            return res.end(JSON.stringify({ error: 'stream_not_ready', message: 'Stream is starting up, please retry' }));
         }
 
         const rewritten = hlsConverter.rewriteManifest(manifest, validation.sessionToken);
