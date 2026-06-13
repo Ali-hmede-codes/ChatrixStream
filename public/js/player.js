@@ -209,29 +209,42 @@
 
             videoEl.muted = true;
             var hlsUrl = window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
-            videoEl.src = hlsUrl;
-            videoEl.play();
 
-            videoEl.addEventListener('loadeddata', function onLoaded() {
-                hideLoading();
-                if (videoEl.muted) {
-                    unmuteBtn.classList.remove('hidden');
+            fetch(hlsUrl, { headers: { 'x-session-token': sessionData.session_token } }).then(function(resp) {
+                if (resp.status === 503) {
+                    showError('Server Error', 'ffmpeg is not installed on the server. HLS stream conversion is unavailable. Please contact the server administrator.');
+                    return;
                 }
-                videoEl.removeEventListener('loadeddata', onLoaded);
-            });
+                if (!resp.ok) {
+                    showError('Stream Error', 'Failed to load the HLS stream (HTTP ' + resp.status + ').');
+                    return;
+                }
+                videoEl.src = hlsUrl;
+                videoEl.play();
 
-            videoEl.addEventListener('error', function onError() {
-                showError('Stream Error', 'Failed to load the stream. The server may need ffmpeg installed for HLS conversion.');
-                videoEl.removeEventListener('error', onError);
-            });
+                videoEl.addEventListener('loadeddata', function onLoaded() {
+                    hideLoading();
+                    if (videoEl.muted) {
+                        unmuteBtn.classList.remove('hidden');
+                    }
+                    videoEl.removeEventListener('loadeddata', onLoaded);
+                });
 
-            videoEl.addEventListener('waiting', function() {
-                showLoading('Buffering...');
-            });
+                videoEl.addEventListener('error', function onError() {
+                    showError('Stream Error', 'Failed to load the stream. The server may need ffmpeg installed for HLS conversion.');
+                    videoEl.removeEventListener('error', onError);
+                });
 
-            videoEl.addEventListener('playing', function onPlaying() {
-                hideLoading();
-                videoEl.removeEventListener('playing', onPlaying);
+                videoEl.addEventListener('waiting', function() {
+                    showLoading('Buffering...');
+                });
+
+                videoEl.addEventListener('playing', function onPlaying() {
+                    hideLoading();
+                    videoEl.removeEventListener('playing', onPlaying);
+                });
+            }).catch(function(err) {
+                showError('Network Error', 'Could not reach the server for HLS stream: ' + err.message);
             });
 
         } else {

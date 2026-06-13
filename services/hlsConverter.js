@@ -40,21 +40,25 @@ class HlsConverter {
 
     _checkFfmpeg() {
         try {
-            const proc = spawn(this.ffmpegPath, ['-version'], { stdio: 'ignore' });
+            const proc = spawn(this.ffmpegPath, ['-version']);
+            let outputReceived = false;
             proc.on('error', () => {
                 this.ffmpegAvailable = false;
-                console.warn('HlsConverter: ffmpeg not found. iOS Safari HLS playback will not work.');
+                console.warn('HlsConverter: ffmpeg not found at path:', this.ffmpegPath, '. iOS Safari HLS playback will not work.');
             });
+            proc.stdout.on('data', () => { outputReceived = true; });
+            proc.stderr.on('data', () => { outputReceived = true; });
             proc.on('close', (code) => {
                 this.ffmpegAvailable = (code === 0);
                 if (this.ffmpegAvailable) {
-                    console.log('HlsConverter: ffmpeg is available');
+                    console.log('HlsConverter: ffmpeg is available at', this.ffmpegPath);
                 } else {
-                    console.warn('HlsConverter: ffmpeg not available. iOS Safari HLS playback will not work.');
+                    console.warn('HlsConverter: ffmpeg not available (exit code', code, '). iOS Safari HLS playback will not work.');
                 }
             });
         } catch (e) {
             this.ffmpegAvailable = false;
+            console.warn('HlsConverter: ffmpeg check failed:', e.message);
         }
     }
 

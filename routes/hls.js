@@ -54,8 +54,8 @@ module.exports = function(db, hlsConverter) {
         }
 
         if (!hlsConverter.isAvailable()) {
-            res.writeHead(503, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-            return res.end('#EXTM3U\n#EXT-X-VERSION:3\n');
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'ffmpeg not available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
         }
 
         hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url);
