@@ -180,18 +180,19 @@ class HlsConverter {
 
         args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
-        args.push('-fflags', '+genpts+igndts+discardcorrupt');
-        args.push('-analyzeduration', '5000000');
-        args.push('-probesize', '1000000');
+        args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
+        args.push('-analyzeduration', '10000000');
+        args.push('-probesize', '5000000');
         args.push('-timeout', '10000000');
         args.push('-reconnect', '1');
         args.push('-reconnect_streamed', '1');
         args.push('-reconnect_delay_max', '5');
         args.push('-avoid_negative_ts', 'make_zero');
+        args.push('-max_delay', '0');
         args.push('-i', urlWithoutCreds);
         args.push('-c:v', 'copy');
         args.push('-c:a', 'aac');
-        args.push('-af', 'aresample=async=1000');
+        args.push('-af', 'aresample=async=50:first_pts=0');
         args.push('-ar', '48000');
         args.push('-ac', '2');
         args.push('-b:a', '128k');

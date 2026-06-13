@@ -185,8 +185,12 @@
             // fall back to startIOSStream for proper manifest polling.
             startNativeStreamDirect(newQuality, true);
         } else if (hlsPlayer) {
-            var hlsUrl = getHlsUrl(newQuality);
-            hlsPlayer.loadSource(hlsUrl);
+            // Full destroy + recreate to reset audio decoder pipeline.
+            // Just calling loadSource() can leave stale audio codec state
+            // from the previous quality, causing pitch distortion (deep voice).
+            hlsPlayer.destroy();
+            hlsPlayer = null;
+            startStream(newQuality);
         }
     }
 
@@ -888,7 +892,12 @@
             // the audio/video pipeline after background restore
             startNativeStreamDirect(currentQuality);
         } else if (hlsPlayer) {
-            hlsPlayer.loadSource(getHlsUrl(currentQuality));
+            // Full destroy + recreate to reset audio/video pipeline after
+            // background restore or stale stream detection.
+            // loadSource() alone can leave stale audio codec state.
+            hlsPlayer.destroy();
+            hlsPlayer = null;
+            startStream(currentQuality);
         }
     }
 
