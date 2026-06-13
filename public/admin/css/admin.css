@@ -422,7 +422,27 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.channel-header:hover {
+    opacity: 0.85;
+}
+
+.channel-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.channel-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
 }
 
 .channel-header h4 {
@@ -438,11 +458,55 @@ body {
     border-radius: 4px;
 }
 
+.channel-toggle-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    padding: 0;
+}
+
+.channel-toggle-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.toggle-arrow {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    font-size: 0.85rem;
+}
+
+.channel-body {
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+    max-height: 2000px;
+    opacity: 1;
+}
+
+.channel-body.collapsed {
+    max-height: 0;
+    opacity: 0;
+    padding: 0;
+    pointer-events: none;
+}
+
 .channel-meta {
     display: flex;
     gap: 12px;
-    margin-bottom: 16px;
     flex-wrap: wrap;
+}
+
+.channel-header-right .meta-tag {
+    margin-bottom: 0;
 }
 
 .meta-tag {
@@ -471,8 +535,8 @@ body {
 }
 
 .channel-section {
-    margin-top: 20px;
-    padding-top: 20px;
+    margin-top: 16px;
+    padding-top: 16px;
     border-top: 1px solid var(--border);
 }
 
@@ -792,6 +856,69 @@ body {
 .code-item .expiry-info {
     color: var(--text-secondary);
     font-size: 0.75rem;
+}
+
+.code-item-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.btn-copy-code {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    color: var(--text-secondary);
+    line-height: 1;
+}
+
+.btn-copy-code:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(108, 92, 231, 0.1);
+}
+
+.btn-copy-code.copied {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(46, 204, 113, 0.1);
+}
+
+.codes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.codes-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.btn-copy-all {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.btn-copy-all:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
 }
 
 .code-item .delete-btn {
@@ -1145,6 +1272,21 @@ body {
     }
     .channel-meta {
         gap: 8px;
+    }
+    .channel-header-right {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .channel-header-right .meta-tag {
+        font-size: 0.7rem;
+    }
+    .code-item {
+        gap: 8px;
+    }
+    .code-item-actions {
+        margin-left: 0;
+        width: 100%;
+        justify-content: flex-end;
     }
     .modal-card {
         max-width: 100%;

@@ -316,42 +316,49 @@
             : '<span class="meta-tag expiry-tag"><span class="meta-label">Expires:</span> <span class="meta-value">Never (set expiry to generate codes)</span></span>';
 
         card.innerHTML =
-            '<div class="channel-header">' +
-                '<h4>' + channel.name + '</h4>' +
-                '<span class="channel-id">ID: ' + channel.id + '</span>' +
-            '</div>' +
-            '<div class="channel-meta">' +
-                expiryTag +
-            '</div>' +
-            '<div class="channel-section">' +
-                '<h5>Public Link</h5>' +
-                '<div class="link-display">' +
-                    '<span class="url">stream.chatrix.vip/channel/' + channel.channel_token + '</span>' +
-                    '<button class="btn-secondary" data-action="copy-link" data-token="' + channel.channel_token + '">Copy Link</button>' +
-                    '<button class="btn-secondary" data-action="regenerate-link" data-id="' + channel.id + '">Regenerate</button>' +
-                    '<button class="btn-secondary" data-action="change-expiry" data-id="' + channel.id + '">Change Expiry</button>' +
+            '<div class="channel-header" data-action="toggle-channel" data-id="' + channel.id + '">' +
+                '<div class="channel-header-left">' +
+                    '<h4>' + channel.name + '</h4>' +
+                    '<span class="channel-id">ID: ' + channel.id + '</span>' +
+                '</div>' +
+                '<div class="channel-header-right">' +
+                    expiryTag +
+                    '<button class="channel-toggle-btn" data-action="toggle-channel" data-id="' + channel.id + '" aria-label="Toggle details">' +
+                        '<span class="toggle-arrow">&#9662;</span>' +
+                    '</button>' +
                 '</div>' +
             '</div>' +
-            '<div class="channel-section">' +
-                '<h5>Streams & Qualities</h5>' +
-                '<div id="qualities-list-' + channel.id + '"></div>' +
-                '<div class="add-quality-form">' +
-                    '<input type="text" id="add-quality-label-' + channel.id + '" placeholder="Label (hd, sd, 4k)">' +
-                    '<input type="text" id="add-quality-url-' + channel.id + '" placeholder="Stream URL">' +
-                    '<button class="btn-success" data-action="add-quality" data-id="' + channel.id + '">Add</button>' +
+            '<div class="channel-body collapsed" id="channel-body-' + channel.id + '">' +
+                '<div class="channel-section">' +
+                    '<h5>Public Link</h5>' +
+                    '<div class="link-display">' +
+                        '<span class="url">stream.chatrix.vip/channel/' + channel.channel_token + '</span>' +
+                        '<button class="btn-secondary" data-action="copy-link" data-token="' + channel.channel_token + '">Copy Link</button>' +
+                        '<button class="btn-secondary" data-action="regenerate-link" data-id="' + channel.id + '">Regenerate</button>' +
+                        '<button class="btn-secondary" data-action="change-expiry" data-id="' + channel.id + '">Change Expiry</button>' +
+                    '</div>' +
                 '</div>' +
-            '</div>' +
-            '<div class="channel-section">' +
-                '<h5>Invite Codes</h5>' +
-                '<div id="codes-list-' + channel.id + '" style="margin-bottom: 8px"></div>' +
-                '<div class="codes-form">' +
-                    '<input type="number" id="gen-codes-count-' + channel.id + '" value="10" min="1" max="100">' +
-                    '<button class="btn-success" data-action="generate-codes" data-id="' + channel.id + '">Generate</button>' +
-                    '<button class="btn-danger" data-action="regenerate-codes" data-id="' + channel.id + '">Regenerate All</button>' +
+                '<div class="channel-section">' +
+                    '<h5>Streams & Qualities</h5>' +
+                    '<div id="qualities-list-' + channel.id + '"></div>' +
+                    '<div class="add-quality-form">' +
+                        '<input type="text" id="add-quality-label-' + channel.id + '" placeholder="Label (hd, sd, 4k)">' +
+                        '<input type="text" id="add-quality-url-' + channel.id + '" placeholder="Stream URL">' +
+                        '<button class="btn-success" data-action="add-quality" data-id="' + channel.id + '">Add</button>' +
+                    '</div>' +
                 '</div>' +
-            '</div>' +
-            '<div class="channel-section">' +
-                '<button class="btn-danger" data-action="delete-channel" data-id="' + channel.id + '">Delete Channel</button>' +
+                '<div class="channel-section">' +
+                    '<h5>Invite Codes</h5>' +
+                    '<div id="codes-list-' + channel.id + '" style="margin-bottom: 8px"></div>' +
+                    '<div class="codes-form">' +
+                        '<input type="number" id="gen-codes-count-' + channel.id + '" value="10" min="1" max="100">' +
+                        '<button class="btn-success" data-action="generate-codes" data-id="' + channel.id + '">Generate</button>' +
+                        '<button class="btn-danger" data-action="regenerate-codes" data-id="' + channel.id + '">Regenerate All</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="channel-section">' +
+                    '<button class="btn-danger" data-action="delete-channel" data-id="' + channel.id + '">Delete Channel</button>' +
+                '</div>' +
             '</div>';
 
         loadQualities(channel);
@@ -408,7 +415,12 @@
             return;
         }
 
-        list.innerHTML = '';
+        list.innerHTML =
+            '<div class="codes-header">' +
+                '<span class="codes-count">' + codes.length + ' code' + (codes.length !== 1 ? 's' : '') + '</span>' +
+                '<button class="btn-copy-all" data-action="copy-all-codes" data-channel-id="' + channelId + '">Copy All Codes</button>' +
+            '</div>';
+
         codes.forEach(function(c) {
             var statusClass = c.status;
             var item = document.createElement('div');
@@ -417,7 +429,10 @@
                 '<span class="code_text">' + c.code + '</span>' +
                 '<span class="status ' + statusClass + '">' + c.status + '</span>' +
                 '<span class="expiry-info">Expires: ' + formatDate(c.expires_at) + '</span>' +
-                '<button class="delete-btn" data-action="revoke-code" data-code="' + c.code + '">Revoke</button>';
+                '<div class="code-item-actions">' +
+                    '<button class="btn-copy-code" data-action="copy-code" data-code="' + c.code + '" title="Copy code">&#128203;</button>' +
+                    '<button class="delete-btn" data-action="revoke-code" data-code="' + c.code + '">Revoke</button>' +
+                '</div>';
             list.appendChild(item);
         });
     }
@@ -489,6 +504,43 @@
         if (!btn) return;
 
         var action = btn.dataset.action;
+
+        if (action === 'toggle-channel') {
+            var body = document.getElementById('channel-body-' + btn.dataset.id);
+            var arrow = btn.closest('.channel-card').querySelector('.toggle-arrow');
+            if (body) {
+                body.classList.toggle('collapsed');
+                if (body.classList.contains('collapsed')) {
+                    arrow.innerHTML = '&#9662;';
+                } else {
+                    arrow.innerHTML = '&#9652;';
+                }
+            }
+            return;
+        }
+
+        if (action === 'copy-code') {
+            navigator.clipboard.writeText(btn.dataset.code);
+            btn.classList.add('copied');
+            btn.innerHTML = '&#10003;';
+            showToast('Code copied: ' + btn.dataset.code, 'success');
+            setTimeout(function() {
+                btn.classList.remove('copied');
+                btn.innerHTML = '&#128203;';
+            }, 1500);
+            return;
+        }
+
+        if (action === 'copy-all-codes') {
+            var channelId = btn.dataset.channelId;
+            var codesList = document.getElementById('codes-list-' + channelId);
+            var codeEls = codesList.querySelectorAll('.code_text');
+            var allCodes = [];
+            codeEls.forEach(function(el) { allCodes.push(el.textContent); });
+            navigator.clipboard.writeText(allCodes.join('\n'));
+            showToast(allCodes.length + ' codes copied to clipboard', 'success');
+            return;
+        }
 
         if (action === 'copy-link') {
             navigator.clipboard.writeText('https://stream.chatrix.vip/channel/' + btn.dataset.token);
