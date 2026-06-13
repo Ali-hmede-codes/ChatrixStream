@@ -3,7 +3,7 @@ const { adminAuth, superAdminOnly } = require('../middleware/adminAuth');
 const { generateChannelToken, generateInviteCodes } = require('../services/codeGenerator');
 const { hashPassword } = require('../services/adminUser');
 
-module.exports = function(db, streamManager) {
+module.exports = function(db, streamManager, hlsConverter) {
     const router = express.Router();
     router.use(adminAuth);
 
@@ -16,7 +16,10 @@ module.exports = function(db, streamManager) {
     const getCodesCountByChannel = db.prepare('SELECT COUNT(*) as count FROM invite_codes WHERE channel_id = ?');
     const deleteChannelById = db.prepare('DELETE FROM channels WHERE id = ?');
     const updateChannel = db.prepare(
-        'UPDATE channels SET name = COALESCE(?, name), code_ttl_hours = COALESCE(?, code_ttl_hours), link_expires_at = COALESCE(?, link_expires_at) WHERE id = ?'
+        'UPDATE channels SET name = COALESCE(?, name), code_ttl_hours = COALESCE(?, code_ttl_hours), link_expires_at = ? WHERE id = ?'
+    );
+    const expireSessionsForChannel = db.prepare(
+        'UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?'
     );
     const updateChannelToken = db.prepare('UPDATE channels SET channel_token = ? WHERE id = ?');
     const insertQuality = db.prepare(
@@ -66,7 +69,34 @@ module.exports = function(db, streamManager) {
     router.patch('/channels/:id', (req, res) => {
         const { id } = req.params;
         const { name, code_ttl_hours, link_expires_at } = req.body;
-        updateChannel.run(name || null, code_ttl_hours || null, link_expires_at || null, id);
+
+        // link_expires_at is sent explicitly: null means clear it, a string means set it
+        // Only use COALESCE for fields that are truly optional (not sent = keep old value)
+        const previousChannel = getChannelById.get(id);
+        const effectiveLinkExpiresAt = (link_expires_at !== undefined)
+            ? (link_expires_at || null)   // null or empty string -> null (clear), otherwise the date string
+            : previousChannel.link_expires_at;  // not sent -> keep old value
+
+        const effectiveTtl = code_ttl_hours || null;
+
+        updateChannel.run(name || null, effectiveTtl, effectiveLinkExpiresAt, id);
+
+        // If link_expires_at was set/updated, expire any sessions that outlive it
+        // and kill active streams so users can't keep watching
+        if (effectiveLinkExpiresAt) {
+            const now = new Date().toISOString();
+            const isExpired = new Date(effectiveLinkExpiresAt) <= new Date();
+
+            // Expire sessions that would outlive the new link expiry
+            expireSessionsForChannel.run(effectiveLinkExpiresAt, parseInt(id), effectiveLinkExpiresAt);
+
+            // If the new expiry is already in the past, kill all streams immediately
+            if (isExpired) {
+                streamManager.stopAllStreamsForChannel(parseInt(id));
+                if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
+            }
+        }
+
         const channel = getChannelById.get(id);
         res.json(channel);
     });

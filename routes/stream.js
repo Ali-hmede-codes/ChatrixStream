@@ -1,6 +1,8 @@
 const express = require('express');
 const { validateSession } = require('../services/codeGenerator');
 
+const STREAM_SESSION_CHECK_MS = 30000;
+
 module.exports = function(db, streamManager) {
     const router = express.Router();
 
@@ -46,7 +48,24 @@ module.exports = function(db, streamManager) {
 
         streamManager.addClient(channel.id, quality.quality_label, quality.stream_url, res);
 
+        // Periodically re-validate session for this long-lived stream connection.
+        // If the session or channel link expires mid-stream, kill the connection.
+        let sessionCheckTimer = setInterval(() => {
+            const result = validateSession(db, sessionToken);
+            if (!result.valid) {
+                console.log('Stream session expired mid-stream for channel', channel.id, '- terminating connection');
+                clearInterval(sessionCheckTimer);
+                sessionCheckTimer = null;
+                streamManager.removeClient(channel.id, quality.quality_label, res);
+                res.end();
+            }
+        }, STREAM_SESSION_CHECK_MS);
+
         req.on('close', () => {
+            if (sessionCheckTimer) {
+                clearInterval(sessionCheckTimer);
+                sessionCheckTimer = null;
+            }
             streamManager.removeClient(channel.id, quality.quality_label, res);
         });
     });

@@ -217,12 +217,13 @@
             hlsPlayer = null;
         }
 
-        if (useNativeHls) {
-            videoEl.removeAttribute('src');
-            videoEl.load();
-        }
-
+        // Always clear video source and reset, regardless of player type
+        videoEl.removeAttribute('src');
+        videoEl.load();
         videoEl.pause();
+
+        // Clear currentQuality so auto-resume mechanisms don't try to restart
+        currentQuality = null;
     }
 
     function tryUnmute() {
@@ -323,6 +324,19 @@
 
             hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
                 console.error('HLS error:', data.type, data.details, data);
+
+                // Check if the error is a 403 (session/channel expired) - stop retrying
+                if (data.details === 'manifestLoadError' || data.details === 'levelLoadError' || data.details === 'fragLoadError') {
+                    var response = data.response || data.context && data.context.response;
+                    if (response && (response.code === 403 || response.status === 403)) {
+                        console.warn('HLS 403 error - session expired, stopping player');
+                        handleSessionExpired('Session expired');
+                        return;
+                    }
+                }
+
+                // Also check via sessionExpired flag
+                if (sessionExpired) return;
 
                 if (data.fatal) {
                     switch (data.type) {
@@ -648,6 +662,7 @@
 
     function scheduleReconnect() {
         if (reconnectTimer) return;
+        if (sessionExpired) return;
 
         destroyPlayer();
         showLoading('Reconnecting...');
@@ -805,6 +820,7 @@
     }
 
     function resumeIfPaused() {
+        if (sessionExpired) return;
         if (!videoEl.paused) return;
         if (!currentQuality) return;
         if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
@@ -833,6 +849,7 @@
 
     // Also handle the pause event - resume if it wasn't user-initiated
     videoEl.addEventListener('pause', function() {
+        if (sessionExpired) return;
         // Don't auto-resume if we're destroying the player or in error state
         if (!currentQuality) return;
         if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
@@ -873,6 +890,7 @@
     });
 
     function handleVisibilityRestore() {
+        if (sessionExpired) return;
         if (!currentQuality) return;
         if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
 
@@ -914,6 +932,7 @@
     }
 
     function reloadCurrentStream() {
+        if (sessionExpired) return;
         if (!currentQuality) return;
 
         if (useNativeHls) {

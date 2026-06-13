@@ -63,7 +63,7 @@ const streamLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WI
 const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
-app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager));
+app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter));
 app.use('/api/auth', redeemLimiter, authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
 app.use('/channel', streamLimiter, streamRoutes(db, streamManager));
@@ -86,17 +86,20 @@ app.get('/admin', (req, res) => {
 function cleanupExpired() {
     const now = new Date().toISOString();
 
+    // Delete expired sessions and invite codes
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
     db.prepare('DELETE FROM invite_codes WHERE expires_at < ?').run(now);
 
+    // Stop streams for channels whose link has expired
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
         streamManager.stopAllStreamsForChannel(ch.id);
         hlsConverter.stopAllForChannel(ch.id);
-        db.prepare('DELETE FROM channels WHERE id = ?').run(ch.id);
+        // Expire any remaining sessions for this channel
+        db.prepare('UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?').run(now, ch.id, now);
     }
 
-    console.log(`Cleanup: removed expired records at ${now}`);
+    console.log('Cleanup: removed expired records at ' + now);
 }
 
 setInterval(cleanupExpired, 5 * 60 * 1000);
