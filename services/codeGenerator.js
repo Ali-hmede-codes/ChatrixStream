@@ -104,6 +104,33 @@ function redeemInviteCode(db, code) {
     return transaction();
 }
 
+function createSessionForChannel(db, channelId) {
+    const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channelId);
+    if (!channel) return { error: 'Channel not found' };
+
+    const now = new Date();
+    if (channel.link_expires_at && new Date(channel.link_expires_at) <= now) return { error: 'Channel link expired' };
+
+    // Session expiry: use link_expires_at if set, otherwise 24 hours from now
+    const sessionExpiresAt = channel.link_expires_at
+        ? channel.link_expires_at
+        : new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+    const sessionToken = generateSessionToken();
+    // Use NULL for invite_code_id since no code was used
+    db.prepare(
+        'INSERT INTO sessions (session_token, channel_id, invite_code_id, expires_at) VALUES (?, ?, ?, ?)'
+    ).run(sessionToken, channelId, null, sessionExpiresAt);
+
+    return {
+        session_token: sessionToken,
+        channel_id: channel.id,
+        channel_token: channel.channel_token,
+        channel_name: channel.name,
+        expires_at: sessionExpiresAt
+    };
+}
+
 function validateSession(db, sessionToken) {
     const session = db.prepare(
         'SELECT * FROM sessions WHERE session_token = ?'
@@ -136,5 +163,6 @@ module.exports = {
     generateSessionToken,
     generateInviteCodes,
     redeemInviteCode,
+    createSessionForChannel,
     validateSession
 };

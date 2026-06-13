@@ -7,6 +7,13 @@
     const watchBtn = document.getElementById('watch-btn');
     const errorMsg = document.getElementById('error-msg');
 
+    // Detect if we're on a /channel/:token page
+    var channelTokenFromUrl = null;
+    var pathParts = window.location.pathname.split('/');
+    if (pathParts.length >= 3 && pathParts[1] === 'channel') {
+        channelTokenFromUrl = pathParts[2];
+    }
+
     async function init() {
         const session = localStorage.getItem(SESSION_KEY);
         if (session) {
@@ -30,6 +37,49 @@
             } catch (e) {}
             localStorage.removeItem(SESSION_KEY);
         }
+
+        // If we have a channel token from URL, try direct access (for codeless channels)
+        if (channelTokenFromUrl) {
+            showLoading();
+            try {
+                const res = await fetch('/api/auth/direct/' + channelTokenFromUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await res.json();
+
+                if (result.session_token) {
+                    // Channel allows free access — auto-created session
+                    localStorage.setItem(SESSION_KEY, JSON.stringify({
+                        session_token: result.session_token,
+                        channel_token: result.channel_token
+                    }));
+                    window.location.href = '/player/' + result.channel_token;
+                    return;
+                }
+
+                // Channel requires a code — show the code form
+                if (result.error === 'This channel requires an invite code') {
+                    showCodeForm();
+                    // Update subtitle to show channel-specific messaging
+                    var subtitle = document.querySelector('.subtitle');
+                    if (subtitle) {
+                        subtitle.textContent = 'Enter your invite code to start watching';
+                    }
+                    return;
+                }
+
+                // Other errors (expired, not found)
+                showCodeForm();
+                showError(result.error || 'Channel not available');
+                return;
+            } catch (e) {
+                showCodeForm();
+                showError('Connection error. Please try again.');
+                return;
+            }
+        }
+
         showCodeForm();
     }
 

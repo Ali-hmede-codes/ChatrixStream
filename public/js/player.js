@@ -39,6 +39,14 @@
     const unmuteBtn = document.getElementById('unmute-btn');
     const tapToPlayOverlay = document.getElementById('tap-to-play-overlay');
 
+    function getRedirectUrl() {
+        // For codeless channels, redirect to the channel page (auto-reconnect)
+        if (channelInfo && channelInfo.channel_token) {
+            return '/channel/' + channelInfo.channel_token;
+        }
+        return '/';
+    }
+
     function isIOS() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -496,7 +504,7 @@
                 errorBtn.onclick = function() {
                     errorOverlay.classList.add('hidden');
                     errorBtn.textContent = 'Get New Code';
-                    errorBtn.onclick = function() { window.location.href = '/'; };
+                    errorBtn.onclick = function() { window.location.href = getRedirectUrl(); };
                     startStream(currentQuality);
                 };
                 return;
@@ -655,7 +663,7 @@
                     errorBtn.onclick = function() {
                         errorOverlay.classList.add('hidden');
                         errorBtn.textContent = 'Get New Code';
-                        errorBtn.onclick = function() { window.location.href = '/'; };
+                        errorBtn.onclick = function() { window.location.href = getRedirectUrl(); };
                         startStream(currentQuality);
                     };
                 }
@@ -752,7 +760,7 @@
         showError('Access Denied', reason);
         errorBtn.onclick = function() {
             localStorage.removeItem(SESSION_KEY);
-            window.location.href = '/';
+            window.location.href = getRedirectUrl();
         };
     }
 
@@ -829,10 +837,19 @@
 
         localStorage.removeItem(SESSION_KEY);
         destroyPlayer();
-        showError('Session Expired', reason || 'Your access has expired. Please enter a new invite code.');
-        errorBtn.onclick = function() {
-            window.location.href = '/';
-        };
+        showError('Session Expired', reason || 'Your access has expired.');
+        // For codeless channels, redirect back to channel page to auto-reconnect
+        if (channelInfo && channelInfo.channel_token) {
+            errorBtn.textContent = 'Reconnect';
+            errorBtn.onclick = function() {
+                window.location.href = getRedirectUrl();
+            };
+        } else {
+            errorBtn.textContent = 'Get New Code';
+            errorBtn.onclick = function() {
+                window.location.href = getRedirectUrl();
+            };
+        }
 
         if (sseConnection) {
             sseConnection.close();

@@ -343,6 +343,13 @@
         return new Date(dateStr) <= new Date();
     }
 
+    function updateToggleLabel(checkbox, labelId) {
+        var label = document.getElementById(labelId);
+        if (label) {
+            label.textContent = checkbox.checked ? 'Code required to watch' : 'Free access — no code needed';
+        }
+    }
+
     function createChannelCard(channel) {
         var card = document.createElement('div');
         card.className = 'channel-card';
@@ -353,11 +360,15 @@
             ? '<span class="meta-tag expiry-tag"><span class="meta-label">Expires:</span> <span class="meta-value ' + expiryClass + '">' + formatDate(channel.link_expires_at) + '</span></span>'
             : '<span class="meta-tag expiry-tag"><span class="meta-label">Expires:</span> <span class="meta-value">Never (set expiry to generate codes)</span></span>';
 
+        var codeReqStatus = channel.code_required === 1 ? 'Code Required' : 'Free Access';
+        var codeReqClass = channel.code_required === 1 ? 'code-required' : 'code-free';
+
         card.innerHTML =
             '<div class="channel-header" data-action="toggle-channel" data-id="' + channel.id + '">' +
                 '<div class="channel-header-left">' +
                     '<h4>' + channel.name + '</h4>' +
                     '<span class="channel-id">ID: ' + channel.id + '</span>' +
+                    '<span class="meta-tag code-req-tag ' + codeReqClass + '">' + codeReqStatus + '</span>' +
                 '</div>' +
                 '<div class="channel-header-right">' +
                     expiryTag +
@@ -368,12 +379,32 @@
             '</div>' +
             '<div class="channel-body collapsed" id="channel-body-' + channel.id + '">' +
                 '<div class="channel-section">' +
+                    '<h5>Channel Settings</h5>' +
+                    '<div class="setting-row">' +
+                        '<span class="setting-label">Require Invite Code</span>' +
+                        '<div class="toggle-switch">' +
+                            '<input type="checkbox" id="code-required-' + channel.id + '"' + (channel.code_required === 1 ? ' checked' : '') + ' data-action="toggle-code-required" data-id="' + channel.id + '">' +
+                            '<span class="toggle-slider"></span>' +
+                        '</div>' +
+                        '<span class="setting-hint" id="code-required-hint-' + channel.id + '">' + (channel.code_required === 1 ? 'Viewers must enter a code' : 'Anyone with the link can watch') + '</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="channel-section">' +
                     '<h5>Public Link</h5>' +
                     '<div class="link-display">' +
                         '<span class="url">stream.chatrix.vip/channel/' + channel.channel_token + '</span>' +
                         '<button class="btn-secondary" data-action="copy-link" data-token="' + channel.channel_token + '">Copy Link</button>' +
                         '<button class="btn-secondary" data-action="regenerate-link" data-id="' + channel.id + '">Regenerate</button>' +
                         '<button class="btn-secondary" data-action="change-expiry" data-id="' + channel.id + '">Change Expiry</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="channel-section code-section' + (channel.code_required === 0 ? ' hidden' : '') + '" id="codes-section-' + channel.id + '">' +
+                    '<h5>Invite Codes</h5>' +
+                    '<div id="codes-list-' + channel.id + '" style="margin-bottom: 8px"></div>' +
+                    '<div class="codes-form">' +
+                        '<input type="number" id="gen-codes-count-' + channel.id + '" value="10" min="1" max="100">' +
+                        '<button class="btn-success" data-action="generate-codes" data-id="' + channel.id + '">Generate</button>' +
+                        '<button class="btn-danger" data-action="regenerate-codes" data-id="' + channel.id + '">Regenerate All</button>' +
                     '</div>' +
                 '</div>' +
                 '<div class="channel-section">' +
@@ -383,15 +414,6 @@
                         '<input type="text" id="add-quality-label-' + channel.id + '" placeholder="Label (hd, sd, 4k)">' +
                         '<input type="text" id="add-quality-url-' + channel.id + '" placeholder="Stream URL">' +
                         '<button class="btn-success" data-action="add-quality" data-id="' + channel.id + '">Add</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="channel-section">' +
-                    '<h5>Invite Codes</h5>' +
-                    '<div id="codes-list-' + channel.id + '" style="margin-bottom: 8px"></div>' +
-                    '<div class="codes-form">' +
-                        '<input type="number" id="gen-codes-count-' + channel.id + '" value="10" min="1" max="100">' +
-                        '<button class="btn-success" data-action="generate-codes" data-id="' + channel.id + '">Generate</button>' +
-                        '<button class="btn-danger" data-action="regenerate-codes" data-id="' + channel.id + '">Regenerate All</button>' +
                     '</div>' +
                 '</div>' +
                 '<div class="channel-section">' +
@@ -524,6 +546,12 @@
         var createTzLabel = document.getElementById('create-expiry-tz-label');
         if (createTzLabel) createTzLabel.textContent = 'Timezone: ' + getUserTimezoneLabel();
         document.getElementById('new-channel-name').focus();
+        // Reset the code required toggle to default ON
+        var codeRequiredToggle = document.getElementById('new-channel-code-required');
+        if (codeRequiredToggle) {
+            codeRequiredToggle.checked = true;
+            updateToggleLabel(codeRequiredToggle, 'new-channel-code-label');
+        }
     }
 
     function closeCreateModal() {
@@ -534,6 +562,7 @@
         var name = document.getElementById('new-channel-name').value.trim();
         var streamUrl = document.getElementById('new-channel-stream-url').value.trim();
         var expiryLocal = document.getElementById('new-channel-expiry').value || null;
+        var codeRequired = document.getElementById('new-channel-code-required').checked;
 
         if (!name) {
             showToast('Channel name is required', 'error');
@@ -545,7 +574,7 @@
 
         var channel = await adminFetch('/channels', {
             method: 'POST',
-            body: { name: name, link_expires_at: expiryUTC }
+            body: { name: name, link_expires_at: expiryUTC, code_required: codeRequired }
         });
 
         if (streamUrl) {
@@ -777,6 +806,43 @@
         if (action === 'delete-user') {
             deleteUser(parseInt(btn.dataset.userId), btn.dataset.userUsername);
             return;
+        }
+    });
+
+    // Handle toggle-switch change events (for code_required toggles)
+    document.addEventListener('change', async function(e) {
+        var checkbox = e.target;
+        if (checkbox.dataset && checkbox.dataset.action === 'toggle-code-required') {
+            var channelId = checkbox.dataset.id;
+            var isChecked = checkbox.checked;
+            try {
+                await adminFetch('/channels/' + channelId, {
+                    method: 'PATCH',
+                    body: { code_required: isChecked }
+                });
+                var hint = document.getElementById('code-required-hint-' + channelId);
+                if (hint) {
+                    hint.textContent = isChecked ? 'Viewers must enter a code' : 'Anyone with the link can watch';
+                }
+                var codesSection = document.getElementById('codes-section-' + channelId);
+                if (codesSection) {
+                    if (isChecked) {
+                        codesSection.classList.remove('hidden');
+                    } else {
+                        codesSection.classList.add('hidden');
+                    }
+                }
+                showToast(isChecked ? 'Invite code now required' : 'Free access enabled — no code needed', 'success');
+            } catch (e) {
+                // Revert toggle on error
+                checkbox.checked = !isChecked;
+                showToast(e.message || 'Failed to update setting', 'error');
+            }
+        }
+
+        // Handle the create modal code-required toggle
+        if (checkbox.id === 'new-channel-code-required') {
+            updateToggleLabel(checkbox, 'new-channel-code-label');
         }
     });
 

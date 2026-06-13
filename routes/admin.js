@@ -21,7 +21,7 @@ module.exports = function(db, streamManager, hlsConverter) {
     router.use(adminAuth);
 
     const insertChannel = db.prepare(
-        'INSERT INTO channels (name, channel_token, code_ttl_hours, link_expires_at) VALUES (?, ?, ?, ?)'
+        'INSERT INTO channels (name, channel_token, code_required, code_ttl_hours, link_expires_at) VALUES (?, ?, ?, ?, ?)'
     );
     const getChannelById = db.prepare('SELECT * FROM channels WHERE id = ?');
     const getAllChannels = db.prepare('SELECT * FROM channels');
@@ -29,7 +29,7 @@ module.exports = function(db, streamManager, hlsConverter) {
     const getCodesCountByChannel = db.prepare('SELECT COUNT(*) as count FROM invite_codes WHERE channel_id = ?');
     const deleteChannelById = db.prepare('DELETE FROM channels WHERE id = ?');
     const updateChannel = db.prepare(
-        'UPDATE channels SET name = COALESCE(?, name), code_ttl_hours = COALESCE(?, code_ttl_hours), link_expires_at = ? WHERE id = ?'
+        'UPDATE channels SET name = COALESCE(?, name), code_required = COALESCE(?, code_required), code_ttl_hours = COALESCE(?, code_ttl_hours), link_expires_at = ? WHERE id = ?'
     );
     const expireSessionsForChannel = db.prepare(
         'UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?'
@@ -52,13 +52,14 @@ module.exports = function(db, streamManager, hlsConverter) {
     const deleteSessionByToken = db.prepare('DELETE FROM sessions WHERE session_token = ?');
 
     router.post('/channels', (req, res) => {
-        const { name, link_expires_at } = req.body;
+        const { name, link_expires_at, code_required } = req.body;
         if (!name) return res.status(400).json({ error: 'Channel name is required' });
 
         const ttl = parseInt(process.env.DEFAULT_CODE_TTL_HOURS) || 6;
         const token = generateChannelToken();
         const normalizedExpiry = normalizeToUTC(link_expires_at);
-        const result = insertChannel.run(name, token, ttl, normalizedExpiry);
+        const codeReq = (code_required !== undefined) ? (code_required ? 1 : 0) : 1;
+        const result = insertChannel.run(name, token, codeReq, ttl, normalizedExpiry);
         const channel = getChannelById.get(result.lastInsertRowid);
         res.json(channel);
     });
@@ -91,7 +92,7 @@ module.exports = function(db, streamManager, hlsConverter) {
 
     router.patch('/channels/:id', (req, res) => {
         const { id } = req.params;
-        const { name, code_ttl_hours, link_expires_at } = req.body;
+        const { name, code_required, code_ttl_hours, link_expires_at } = req.body;
 
         // link_expires_at is sent explicitly: null means clear it, a string means set it
         // Only use COALESCE for fields that are truly optional (not sent = keep old value)
@@ -102,7 +103,11 @@ module.exports = function(db, streamManager, hlsConverter) {
 
         const effectiveTtl = code_ttl_hours || null;
 
-        updateChannel.run(name || null, effectiveTtl, effectiveLinkExpiresAt, id);
+        // code_required: 1 = require code, 0 = no code needed (free access)
+        // Only update if explicitly sent in the request body
+        const effectiveCodeRequired = (code_required !== undefined) ? (code_required ? 1 : 0) : null;
+
+        updateChannel.run(name || null, effectiveCodeRequired, effectiveTtl, effectiveLinkExpiresAt, id);
 
         // If link_expires_at was set/updated, expire any sessions that outlive it
         // and kill active streams so users can't keep watching

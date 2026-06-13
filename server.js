@@ -79,6 +79,10 @@ app.get('/player/:channelToken', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'player.html'));
 });
 
+app.get('/channel/:channelToken', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin', 'admin.html'));
 });

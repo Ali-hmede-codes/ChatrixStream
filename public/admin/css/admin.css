@@ -5,6 +5,8 @@
     --shadow: 0 2px 8px rgba(0,0,0,0.3);
     --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
     --transition: 0.2s ease;
+    --toggle-width: 44px;
+    --toggle-height: 24px;
 }
 
 #admin-app {
@@ -1304,4 +1306,118 @@
         max-width: 100%;
         margin: 16px;
     }
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: var(--toggle-width);
+    height: var(--toggle-height);
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--toggle-height);
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: calc(var(--toggle-height) - 6px);
+    width: calc(var(--toggle-height) - 6px);
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform var(--transition), background-color var(--transition);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(calc(var(--toggle-width) - var(--toggle-height)));
+    background-color: white;
+}
+
+.toggle-switch input:focus + .toggle-slider {
+    box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.3);
+}
+
+/* Toggle Field (create modal) */
+.toggle-field {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 12px !important;
+}
+
+.toggle-field label {
+    margin-bottom: 0;
+    white-space: nowrap;
+}
+
+.toggle-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Setting Row (channel card settings) */
+.setting-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.setting-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.setting-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Code Required Tag */
+.code-req-tag {
+    font-size: 0.7rem !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.code-req-tag.code-required {
+    background: rgba(108, 92, 231, 0.15);
+    color: var(--accent);
+}
+
+.code-req-tag.code-free {
+    background: rgba(46, 204, 113, 0.15);
+    color: var(--success);
+}
+
+/* Channel Section: hidden code section */
+.channel-section.code-section.hidden {
+    display: none;
 }

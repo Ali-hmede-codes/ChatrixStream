@@ -16,6 +16,7 @@ module.exports = function initDB(dbPath) {
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             name            TEXT NOT NULL,
             channel_token   TEXT NOT NULL UNIQUE,
+            code_required   INTEGER DEFAULT 1,
             code_ttl_hours  INTEGER DEFAULT 6,
             link_expires_at DATETIME,
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -43,7 +44,7 @@ module.exports = function initDB(dbPath) {
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             session_token   TEXT NOT NULL UNIQUE,
             channel_id      INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-            invite_code_id  INTEGER NOT NULL REFERENCES invite_codes(id) ON DELETE CASCADE,
+            invite_code_id  INTEGER REFERENCES invite_codes(id) ON DELETE CASCADE,
             expires_at      DATETIME NOT NULL,
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -56,6 +57,43 @@ module.exports = function initDB(dbPath) {
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+    // Migration: add code_required column if missing (for existing databases)
+    try {
+        const colCheck = db.prepare("PRAGMA table_info(channels)").all();
+        const hasCodeRequired = colCheck.some(col => col.name === 'code_required');
+        if (!hasCodeRequired) {
+            db.exec('ALTER TABLE channels ADD COLUMN code_required INTEGER DEFAULT 1');
+            console.log('Migration: added code_required column to channels table');
+        }
+    } catch (e) {
+        console.error('Migration error (code_required):', e.message);
+    }
+
+    // Migration: make invite_code_id nullable in sessions (for codeless channel access)
+    try {
+        const sessionColCheck = db.prepare("PRAGMA table_info(sessions)").all();
+        const inviteCodeCol = sessionColCheck.find(col => col.name === 'invite_code_id');
+        if (inviteCodeCol && inviteCodeCol.notnull === 1) {
+            // Recreate sessions table with nullable invite_code_id
+            db.exec(`
+                CREATE TABLE sessions_new (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_token   TEXT NOT NULL UNIQUE,
+                    channel_id      INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+                    invite_code_id  INTEGER REFERENCES invite_codes(id) ON DELETE CASCADE,
+                    expires_at      DATETIME NOT NULL,
+                    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO sessions_new SELECT * FROM sessions;
+                DROP TABLE sessions;
+                ALTER TABLE sessions_new RENAME TO sessions;
+            `);
+            console.log('Migration: made invite_code_id nullable in sessions table');
+        }
+    } catch (e) {
+        console.error('Migration error (sessions invite_code_id nullable):', e.message);
+    }
 
     db.exec(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_token ON channels(channel_token);
