@@ -135,11 +135,11 @@ class HlsConverter {
         cleanUrl.password = '';
         const urlWithoutCreds = cleanUrl.toString();
 
+        args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
-        args.push('-fflags', '+genpts');
-        args.push('-reconnect', '1');
-        args.push('-reconnect_streamed', '1');
-        args.push('-reconnect_delay_max', '5');
+        args.push('-fflags', '+genpts+discardcorrupt');
+        args.push('-analyzeduration', '2000000');
+        args.push('-probesize', '500000');
         args.push('-timeout', '10000000');
         args.push('-i', urlWithoutCreds);
         args.push('-c', 'copy');
