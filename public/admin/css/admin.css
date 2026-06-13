@@ -7,8 +7,9 @@
     --transition: 0.2s ease;
 }
 
-body {
+#admin-app {
     overflow-x: hidden;
+    min-height: 100vh;
 }
 
 .login-wrapper {
@@ -490,6 +491,17 @@ body {
     transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
     max-height: 2000px;
     opacity: 1;
+}
+
+.codes-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+    .codes-scroll {
+        max-height: 250px;
+    }
 }
 
 .channel-body.collapsed {

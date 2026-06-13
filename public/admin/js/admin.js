@@ -459,6 +459,9 @@
                 '<button class="btn-copy-all" data-action="copy-all-codes" data-channel-id="' + channelId + '">Copy All Codes</button>' +
             '</div>';
 
+        var codesScroll = document.createElement('div');
+        codesScroll.className = 'codes-scroll';
+
         codes.forEach(function(c) {
             var statusClass = c.status;
             var item = document.createElement('div');
@@ -471,8 +474,10 @@
                     '<button class="btn-copy-code" data-action="copy-code" data-code="' + c.code + '" title="Copy code">&#128203;</button>' +
                     '<button class="delete-btn" data-action="revoke-code" data-code="' + c.code + '">Revoke</button>' +
                 '</div>';
-            list.appendChild(item);
+            codesScroll.appendChild(item);
         });
+
+        list.appendChild(codesScroll);
     }
 
     function formatDate(dateStr) {
