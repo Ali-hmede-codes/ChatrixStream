@@ -472,6 +472,8 @@
             if (!nativeHasPlayed) showLoading('Buffering...');
         }
         function onStalled() {
+            // Don't count stalls during fullscreen transitions
+            if (isFullscreenTransition) return;
             nativeStallCount++;
             if (nativeStallCount > maxNativeStalls && nativeHasPlayed) {
                 console.warn('Native HLS stalled too many times, reconnecting...');
@@ -629,14 +631,20 @@
         };
     }
 
+    var isFullscreenTransition = false;
+
     function toggleFullscreen() {
         if (document.fullscreenElement || document.webkitFullscreenElement) {
+            isFullscreenTransition = true;
             if (document.exitFullscreen) {
                 document.exitFullscreen();
             } else if (document.webkitExitFullscreen) {
                 document.webkitExitFullscreen();
             }
         } else if (videoEl.webkitEnterFullscreen) {
+            // iOS-specific: puts the video element itself fullscreen
+            // Exiting this always pauses the video on iOS
+            isFullscreenTransition = true;
             videoEl.webkitEnterFullscreen();
         } else if (videoContainer.requestFullscreen) {
             videoContainer.requestFullscreen();
@@ -655,9 +663,66 @@
         }
     }
 
+    function handleFullscreenChange() {
+        updateFullscreenIcon();
+
+        // When exiting fullscreen, resume playback if it was paused by the browser
+        var isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (!isFullscreen && isFullscreenTransition) {
+            isFullscreenTransition = false;
+            // Give the browser a moment to settle after fullscreen exit
+            setTimeout(function() {
+                resumeIfPaused();
+            }, 300);
+        }
+    }
+
+    function resumeIfPaused() {
+        if (!videoEl.paused) return;
+        if (!currentQuality) return;
+        if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
+
+        console.log('Video paused unexpectedly, attempting to resume...');
+        var playPromise = videoEl.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(function() {
+                // Autoplay blocked (iOS) - try muted
+                if (!videoEl.muted) {
+                    videoEl.muted = true;
+                    unmuteBtn.classList.remove('hidden');
+                    videoEl.play().catch(function() {});
+                }
+            });
+        }
+    }
+
+    // Handle iOS video-element fullscreen exit (webkitEndFullscreen)
+    videoEl.addEventListener('webkitendfullscreen', function() {
+        isFullscreenTransition = false;
+        setTimeout(function() {
+            resumeIfPaused();
+        }, 300);
+    });
+
+    // Also handle the pause event - resume if it wasn't user-initiated
+    videoEl.addEventListener('pause', function() {
+        // Don't auto-resume if we're destroying the player or in error state
+        if (!currentQuality) return;
+        if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
+        if (loadingOverlay && !loadingOverlay.classList.contains('hidden')) return;
+
+        // Small delay to distinguish user-initiated pause from browser-initiated
+        setTimeout(function() {
+            // If still paused and not in a loading/error state, try to resume
+            if (videoEl.paused && currentQuality) {
+                resumeIfPaused();
+            }
+        }, 500);
+    });
+
     fullscreenBtn.addEventListener('click', toggleFullscreen);
-    document.addEventListener('fullscreenchange', updateFullscreenIcon);
-    document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     videoContainer.addEventListener('dblclick', toggleFullscreen);
 
