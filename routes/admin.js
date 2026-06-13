@@ -3,6 +3,19 @@ const { adminAuth, superAdminOnly } = require('../middleware/adminAuth');
 const { generateChannelToken, generateInviteCodes } = require('../services/codeGenerator');
 const { hashPassword } = require('../services/adminUser');
 
+// Normalize any datetime string to UTC ISO format for consistent storage and comparison
+// Handles: "2026-06-13T15:30" (no tz), "2026-06-13T12:30:00.000Z" (UTC), "2026-06-13T15:30:00+03:00" (with offset)
+function normalizeToUTC(dateStr) {
+    if (!dateStr) return null;
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr; // Can't parse, return as-is
+        return d.toISOString();
+    } catch (e) {
+        return dateStr; // Can't parse, return as-is
+    }
+}
+
 module.exports = function(db, streamManager, hlsConverter) {
     const router = express.Router();
     router.use(adminAuth);
@@ -44,9 +57,19 @@ module.exports = function(db, streamManager, hlsConverter) {
 
         const ttl = parseInt(process.env.DEFAULT_CODE_TTL_HOURS) || 6;
         const token = generateChannelToken();
-        const result = insertChannel.run(name, token, ttl, link_expires_at || null);
+        const normalizedExpiry = normalizeToUTC(link_expires_at);
+        const result = insertChannel.run(name, token, ttl, normalizedExpiry);
         const channel = getChannelById.get(result.lastInsertRowid);
         res.json(channel);
+    });
+
+    router.get('/server-time', (req, res) => {
+        const now = new Date();
+        res.json({
+            server_time_utc: now.toISOString(),
+            server_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            server_timezone_offset: now.getTimezoneOffset()
+        });
     });
 
     router.get('/channels', (req, res) => {
@@ -74,7 +97,7 @@ module.exports = function(db, streamManager, hlsConverter) {
         // Only use COALESCE for fields that are truly optional (not sent = keep old value)
         const previousChannel = getChannelById.get(id);
         const effectiveLinkExpiresAt = (link_expires_at !== undefined)
-            ? (link_expires_at || null)   // null or empty string -> null (clear), otherwise the date string
+            ? (link_expires_at ? normalizeToUTC(link_expires_at) : null)   // Normalize to UTC; null/empty -> null (clear)
             : previousChannel.link_expires_at;  // not sent -> keep old value
 
         const effectiveTtl = code_ttl_hours || null;
@@ -171,11 +194,11 @@ module.exports = function(db, streamManager, hlsConverter) {
     router.get('/channels/:id/codes', (req, res) => {
         const { id } = req.params;
         const codes = getCodesByChannel.all(id);
-        const now = new Date().toISOString();
+        const now = new Date();
         const enriched = codes.map(c => {
             let status = 'unused';
             if (c.redeemed === 1) status = 'redeemed';
-            else if (c.expires_at <= now) status = 'expired';
+            else if (new Date(c.expires_at) <= now) status = 'expired';
             return { code: c.code, status, expires_at: c.expires_at, session_token: c.session_token || null };
         });
         res.json(enriched);

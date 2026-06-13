@@ -70,20 +70,20 @@ function redeemInviteCode(db, code) {
         if (!codeRow) return { error: 'Code not found' };
         if (codeRow.redeemed === 1) return { error: 'Code already redeemed' };
 
-        const now = new Date().toISOString();
-        if (codeRow.expires_at <= now) return { error: 'Code expired' };
+        const now = new Date();
+        if (new Date(codeRow.expires_at) <= now) return { error: 'Code expired' };
 
         const channel = db.prepare(
             'SELECT * FROM channels WHERE id = ?'
         ).get(codeRow.channel_id);
 
         if (!channel) return { error: 'Channel not found' };
-        if (channel.link_expires_at && channel.link_expires_at <= now) return { error: 'Channel link expired' };
+        if (channel.link_expires_at && new Date(channel.link_expires_at) <= now) return { error: 'Channel link expired' };
 
         db.prepare('UPDATE invite_codes SET redeemed = 1 WHERE id = ?').run(codeRow.id);
 
         // Session expires at the earliest of: code expiry, channel link expiry
-        const sessionExpiresAt = (channel.link_expires_at && channel.link_expires_at < codeRow.expires_at)
+        const sessionExpiresAt = (channel.link_expires_at && new Date(channel.link_expires_at) < new Date(codeRow.expires_at))
             ? channel.link_expires_at
             : codeRow.expires_at;
 
@@ -111,15 +111,15 @@ function validateSession(db, sessionToken) {
 
     if (!session) return { valid: false, error: 'Session not found' };
 
-    const now = new Date().toISOString();
-    if (session.expires_at <= now) return { valid: false, error: 'Session expired' };
+    const now = new Date();
+    if (new Date(session.expires_at) <= now) return { valid: false, error: 'Session expired' };
 
     const channel = db.prepare(
         'SELECT * FROM channels WHERE id = ?'
     ).get(session.channel_id);
 
     if (!channel) return { valid: false, error: 'Channel not found' };
-    if (channel.link_expires_at && channel.link_expires_at <= now) return { valid: false, error: 'Channel link expired' };
+    if (channel.link_expires_at && new Date(channel.link_expires_at) <= now) return { valid: false, error: 'Channel link expired' };
 
     return {
         valid: true,

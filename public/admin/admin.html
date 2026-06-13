@@ -103,6 +103,7 @@
                                 <div class="input-field">
                                     <label for="new-channel-expiry">Link Expiry <span class="field-hint">(required for codes to work)</span></label>
                                     <input type="datetime-local" id="new-channel-expiry">
+                                    <span class="field-hint" id="create-expiry-tz-label"></span>
                                 </div>
                                 <p class="form-note">Invite codes will expire when the channel link expires. Set an expiry date to enable code generation.</p>
                             </div>
@@ -125,6 +126,7 @@
                                 <div class="input-field">
                                     <label for="expiry-datetime-input">Expiry Date & Time</label>
                                     <input type="datetime-local" id="expiry-datetime-input">
+                                    <span class="field-hint" id="expiry-tz-label"></span>
                                 </div>
                                 <p class="form-note">Set a new expiry or clear it to make the link permanent. Codes will inherit this expiry.</p>
                             </div>

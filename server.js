@@ -90,7 +90,7 @@ function cleanupExpired() {
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
     db.prepare('DELETE FROM invite_codes WHERE expires_at < ?').run(now);
 
-    const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at < ?').all(now);
+    const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at IS NOT NULL AND link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
         streamManager.stopAllStreamsForChannel(ch.id);
         hlsConverter.stopAllForChannel(ch.id);

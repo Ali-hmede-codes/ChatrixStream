@@ -107,6 +107,17 @@
             if (diff < 30 * 60 * 1000 && diff > 0) {
                 expiryNotice.classList.remove('hidden');
                 expiryText.textContent = 'Access expires in ' + Math.ceil(diff / 60000) + ' minutes';
+            } else if (diff > 0) {
+                // Show full expiry time in user's local timezone
+                var localExpiryStr = expires.toLocaleString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    day: 'numeric',
+                    month: 'short',
+                    timeZoneName: 'short'
+                });
+                expiryNotice.classList.remove('hidden');
+                expiryText.textContent = 'Access expires at ' + localExpiryStr;
             }
         }
 

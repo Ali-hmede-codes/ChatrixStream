@@ -300,6 +300,44 @@
         }
     }
 
+    // --- Timezone-aware datetime helpers ---
+    // Convert datetime-local input value (local browser time) to UTC ISO string
+    function localDatetimeToUTC(datetimeLocalValue) {
+        if (!datetimeLocalValue) return null;
+        // datetime-local gives "YYYY-MM-DDTHH:MM" in local browser time
+        // new Date() interprets this as local time, then toISOString() converts to UTC
+        var d = new Date(datetimeLocalValue);
+        if (isNaN(d.getTime())) return null;
+        return d.toISOString();
+    }
+
+    // Convert UTC ISO string to datetime-local format (local browser time) for input display
+    function utcToLocalDatetime(isoString) {
+        if (!isoString) return '';
+        var d = new Date(isoString);
+        if (isNaN(d.getTime())) return '';
+        var year = d.getFullYear();
+        var month = String(d.getMonth() + 1).padStart(2, '0');
+        var day = String(d.getDate()).padStart(2, '0');
+        var hours = String(d.getHours()).padStart(2, '0');
+        var minutes = String(d.getMinutes()).padStart(2, '0');
+        return year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
+    }
+
+    // Get the user's timezone abbreviation (e.g., "GMT+3", "EST", "PST")
+    function getUserTimezoneLabel() {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        } catch (e) {
+            var offset = new Date().getTimezoneOffset();
+            var sign = offset <= 0 ? '+' : '-';
+            var absOffset = Math.abs(offset);
+            var hours = Math.floor(absOffset / 60);
+            var mins = absOffset % 60;
+            return 'UTC' + sign + hours + (mins ? ':' + String(mins).padStart(2, '0') : '');
+        }
+    }
+
     function isExpired(dateStr) {
         if (!dateStr) return false;
         return new Date(dateStr) <= new Date();
@@ -439,7 +477,21 @@
 
     function formatDate(dateStr) {
         if (!dateStr) return 'Never';
-        return new Date(dateStr).toLocaleString();
+        try {
+            var d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            // Show date in user's local timezone with timezone abbreviation
+            return d.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        } catch (e) {
+            return dateStr;
+        }
     }
 
     function showLogin() {
@@ -463,6 +515,9 @@
 
     function openCreateModal() {
         createChannelSection.classList.remove('hidden');
+        // Show timezone label on the expiry input
+        var createTzLabel = document.getElementById('create-expiry-tz-label');
+        if (createTzLabel) createTzLabel.textContent = 'Timezone: ' + getUserTimezoneLabel();
         document.getElementById('new-channel-name').focus();
     }
 
@@ -473,16 +528,19 @@
     async function createChannel() {
         var name = document.getElementById('new-channel-name').value.trim();
         var streamUrl = document.getElementById('new-channel-stream-url').value.trim();
-        var expiry = document.getElementById('new-channel-expiry').value || null;
+        var expiryLocal = document.getElementById('new-channel-expiry').value || null;
 
         if (!name) {
             showToast('Channel name is required', 'error');
             return;
         }
 
+        // Convert local datetime to UTC ISO before sending to server
+        var expiryUTC = localDatetimeToUTC(expiryLocal);
+
         var channel = await adminFetch('/channels', {
             method: 'POST',
-            body: { name: name, link_expires_at: expiry }
+            body: { name: name, link_expires_at: expiryUTC }
         });
 
         if (streamUrl) {
@@ -560,12 +618,14 @@
             expiryEditChannelId = btn.dataset.id;
             var ch = channels.find(function(c) { return c.id == expiryEditChannelId; });
             if (ch && ch.link_expires_at) {
-                var d = new Date(ch.link_expires_at);
-                var local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                expiryDatetimeInput.value = local;
+                // Convert UTC ISO string to local datetime for the input
+                expiryDatetimeInput.value = utcToLocalDatetime(ch.link_expires_at);
             } else {
                 expiryDatetimeInput.value = '';
             }
+            // Update timezone label
+            var tzLabel = document.getElementById('expiry-tz-label');
+            if (tzLabel) tzLabel.textContent = getUserTimezoneLabel();
             expiryModal.classList.remove('hidden');
             expiryDatetimeInput.focus();
             return;
@@ -729,7 +789,13 @@
             showToast('Please select a date or click Clear', 'error');
             return;
         }
-        await adminFetch('/channels/' + expiryEditChannelId, { method: 'PATCH', body: { link_expires_at: value } });
+        // Convert local datetime to UTC ISO before sending to server
+        var utcValue = localDatetimeToUTC(value);
+        if (!utcValue) {
+            showToast('Invalid date/time value', 'error');
+            return;
+        }
+        await adminFetch('/channels/' + expiryEditChannelId, { method: 'PATCH', body: { link_expires_at: utcValue } });
         expiryModal.classList.add('hidden');
         showToast('Expiry updated', 'success');
         loadChannels();
