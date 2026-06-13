@@ -46,7 +46,7 @@ module.exports = function(db, hlsConverter) {
         return { valid: true, sessionToken, channel, quality };
     }
 
-    router.get('/:channelToken/:quality/index.m3u8', (req, res) => {
+    router.get('/:channelToken/:quality/index.m3u8', async (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
             res.writeHead(403, { 'Content-Type': 'application/vnd.apple.mpegurl' });
@@ -60,7 +60,7 @@ module.exports = function(db, hlsConverter) {
 
         hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url);
 
-        const manifest = hlsConverter.getManifest(validation.channel.id, validation.quality.quality_label);
+        const manifest = await hlsConverter.waitForManifest(validation.channel.id, validation.quality.quality_label);
         if (!manifest) {
             res.writeHead(503, {
                 'Content-Type': 'application/json',

@@ -9,8 +9,11 @@ class HlsConverter {
         this.segmentDuration = options.segmentDuration || 2;
         this.listSize = options.listSize || 6;
         this.idleTimeout = options.idleTimeout || 30000;
+        this.idleGrace = options.idleGrace || 5000;
         this.restartDelay = options.restartDelay || 3000;
         this.maxRetries = options.maxRetries || 5;
+        this.manifestWaitTimeout = options.manifestWaitTimeout || 15000;
+        this.startupTimeout = options.startupTimeout || 60000;
         this.ffmpegPath = options.ffmpegPath || 'ffmpeg';
         this.ffmpegAvailable = false;
 
@@ -101,14 +104,22 @@ class HlsConverter {
             streamUrl,
             lastAccess: Date.now(),
             idleTimer: null,
+            startupTimer: null,
             restartTimer: null,
             restarting: false,
-            retryCount: 0
+            retryCount: 0,
+            manifestReady: false
         };
 
         this.activeConversions.set(key, state);
         this._startFfmpeg(key);
-        this._scheduleIdleCheck(key);
+
+        state.startupTimer = setTimeout(() => {
+            if (this.activeConversions.has(key) && !state.manifestReady) {
+                console.log('HlsConverter: startup timeout, no manifest produced for', key);
+                this.stopConversion(state.channelId, state.qualityLabel);
+            }
+        }, this.startupTimeout);
 
         return state;
     }
@@ -158,7 +169,7 @@ class HlsConverter {
 
         const proc = spawn(this.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         state.ffmpegProcess = proc;
-        state.retryCount = 0;
+        state.manifestReady = false;
 
         proc.stderr.on('data', (data) => {
             const msg = data.toString().trim();
@@ -210,7 +221,9 @@ class HlsConverter {
         const state = this.activeConversions.get(key);
         if (!state) return;
         state.lastAccess = Date.now();
-        this._scheduleIdleCheck(key);
+        if (state.manifestReady) {
+            this._scheduleIdleCheck(key);
+        }
     }
 
     _scheduleIdleCheck(key) {
@@ -218,6 +231,8 @@ class HlsConverter {
         if (!state) return;
 
         if (state.idleTimer) clearTimeout(state.idleTimer);
+
+        const checkInterval = this.idleTimeout + this.idleGrace;
 
         state.idleTimer = setTimeout(() => {
             state.idleTimer = null;
@@ -228,7 +243,7 @@ class HlsConverter {
             } else {
                 this._scheduleIdleCheck(key);
             }
-        }, this.idleTimeout);
+        }, checkInterval);
     }
 
     getManifest(channelId, qualityLabel) {
@@ -248,10 +263,42 @@ class HlsConverter {
             if (!content.includes('.ts')) {
                 return null;
             }
+            if (!state.manifestReady) {
+                state.manifestReady = true;
+                if (state.startupTimer) {
+                    clearTimeout(state.startupTimer);
+                    state.startupTimer = null;
+                }
+                this._scheduleIdleCheck(key);
+            }
             return content;
         } catch (e) {
             return null;
         }
+    }
+
+    waitForManifest(channelId, qualityLabel, timeoutMs) {
+        const maxWait = timeoutMs || this.manifestWaitTimeout;
+        const startTime = Date.now();
+        const pollInterval = 500;
+
+        return new Promise((resolve) => {
+            const poll = () => {
+                const manifest = this.getManifest(channelId, qualityLabel);
+                if (manifest) {
+                    resolve(manifest);
+                    return;
+                }
+
+                if (Date.now() - startTime >= maxWait) {
+                    resolve(null);
+                    return;
+                }
+
+                setTimeout(poll, pollInterval);
+            };
+            poll();
+        });
     }
 
     rewriteManifest(manifestContent, sessionToken) {
@@ -284,6 +331,7 @@ class HlsConverter {
         if (!state) return;
 
         if (state.idleTimer) clearTimeout(state.idleTimer);
+        if (state.startupTimer) clearTimeout(state.startupTimer);
         if (state.restartTimer) clearTimeout(state.restartTimer);
         if (state.ffmpegProcess) {
             try { state.ffmpegProcess.kill(); } catch (e) { /* ignore */ }
