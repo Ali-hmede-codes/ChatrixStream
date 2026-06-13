@@ -10,6 +10,7 @@ class HlsConverter {
         this.listSize = options.listSize || 6;
         this.idleTimeout = options.idleTimeout || 30000;
         this.restartDelay = options.restartDelay || 3000;
+        this.maxRetries = options.maxRetries || 5;
         this.ffmpegPath = options.ffmpegPath || 'ffmpeg';
         this.ffmpegAvailable = false;
 
@@ -101,7 +102,8 @@ class HlsConverter {
             lastAccess: Date.now(),
             idleTimer: null,
             restartTimer: null,
-            restarting: false
+            restarting: false,
+            retryCount: 0
         };
 
         this.activeConversions.set(key, state);
@@ -135,6 +137,10 @@ class HlsConverter {
 
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts');
+        args.push('-reconnect', '1');
+        args.push('-reconnect_streamed', '1');
+        args.push('-reconnect_delay_max', '5');
+        args.push('-timeout', '10000000');
         args.push('-i', urlWithoutCreds);
         args.push('-c', 'copy');
         args.push('-f', 'hls');
@@ -152,10 +158,11 @@ class HlsConverter {
 
         const proc = spawn(this.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         state.ffmpegProcess = proc;
+        state.retryCount = 0;
 
         proc.stderr.on('data', (data) => {
             const msg = data.toString().trim();
-            if (msg && !msg.startsWith('frame=') && !msg.startsWith('  ')) {
+            if (msg && (msg.includes('Error') || msg.includes('error') || msg.includes('Invalid') || msg.includes('failed') || msg.includes('Connection') || msg.includes('timeout') || !msg.startsWith('frame=') && !msg.startsWith('  lib'))) {
                 console.log('HlsConverter ffmpeg:', msg);
             }
         });
@@ -166,8 +173,8 @@ class HlsConverter {
             this._scheduleRestart(key);
         });
 
-        proc.on('close', (code) => {
-            console.log('HlsConverter: ffmpeg exited with code', code, 'for', key);
+        proc.on('close', (code, signal) => {
+            console.log('HlsConverter: ffmpeg exited with code', code, 'signal', signal, 'for', key);
             state.ffmpegProcess = null;
             if (this.activeConversions.has(key) && !state.restarting) {
                 this._scheduleRestart(key);
@@ -181,12 +188,19 @@ class HlsConverter {
 
         if (state.restartTimer) return;
 
+        state.retryCount++;
+        if (state.retryCount > this.maxRetries) {
+            console.log('HlsConverter: max retries exceeded for', key, ', stopping');
+            this.stopConversion(state.channelId, state.qualityLabel);
+            return;
+        }
+
         state.restarting = true;
         state.restartTimer = setTimeout(() => {
             state.restartTimer = null;
             state.restarting = false;
             if (this.activeConversions.has(key)) {
-                console.log('HlsConverter: restarting ffmpeg for', key);
+                console.log('HlsConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ')');
                 this._startFfmpeg(key);
             }
         }, this.restartDelay);

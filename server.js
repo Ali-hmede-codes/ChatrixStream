@@ -30,6 +30,7 @@ const hlsConverter = new HlsConverter({
     listSize: parseInt(process.env.HLS_LIST_SIZE) || 6,
     idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
     restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 3000,
+    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 5,
     ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
 });
 
