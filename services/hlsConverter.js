@@ -124,6 +124,30 @@ class HlsConverter {
         return state;
     }
 
+    ensureConversionWarmup(channelId, qualityLabel, streamUrl) {
+        const key = this._getKey(channelId, qualityLabel);
+        const existing = this.activeConversions.get(key);
+        if (existing) {
+            this._recordAccess(key);
+            return;
+        }
+        this.ensureConversion(channelId, qualityLabel, streamUrl);
+    }
+
+    isManifestReady(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        if (!state) return false;
+        const manifestPath = path.join(state.dir, 'index.m3u8');
+        if (!fs.existsSync(manifestPath)) return false;
+        try {
+            const content = fs.readFileSync(manifestPath, 'utf8');
+            return content.includes('.ts');
+        } catch (e) {
+            return false;
+        }
+    }
+
     _startFfmpeg(key) {
         const state = this.activeConversions.get(key);
         if (!state) return;
@@ -149,8 +173,8 @@ class HlsConverter {
         args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts+discardcorrupt');
-        args.push('-analyzeduration', '5000000');
-        args.push('-probesize', '1000000');
+        args.push('-analyzeduration', '2000000');
+        args.push('-probesize', '500000');
         args.push('-timeout', '10000000');
         args.push('-reconnect', '1');
         args.push('-reconnect_streamed', '1');

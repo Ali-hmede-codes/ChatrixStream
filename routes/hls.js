@@ -7,6 +7,7 @@ module.exports = function(db, hlsConverter) {
 
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
     const getQualityByChannelAndLabel = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? AND quality_label = ?');
+    const getQualitiesByChannel = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
 
     router.options('/:channelToken/:quality/index.m3u8', (req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,6 +18,22 @@ module.exports = function(db, hlsConverter) {
     });
 
     router.options('/:channelToken/:quality/:segmentName', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'x-session-token');
+        res.setHeader('Access-Control-Max-Age', '86400');
+        res.sendStatus(204);
+    });
+
+    router.options('/:channelToken/warmup', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-session-token');
+        res.setHeader('Access-Control-Max-Age', '86400');
+        res.sendStatus(204);
+    });
+
+    router.options('/:channelToken/manifest-ready', (req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'x-session-token');
@@ -45,6 +62,53 @@ module.exports = function(db, hlsConverter) {
 
         return { valid: true, sessionToken, channel, quality };
     }
+
+    router.post('/:channelToken/warmup', (req, res) => {
+        const sessionToken = req.headers['x-session-token'] || req.query.session;
+        if (!sessionToken) return res.status(403).json({ error: 'No session token' });
+
+        const session = validateSession(db, sessionToken);
+        if (!session.valid) return res.status(403).json({ error: session.error });
+
+        const channel = getChannelByToken.get(req.params.channelToken);
+        if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+        if (session.channel_id !== channel.id) return res.status(403).json({ error: 'Session not valid for this channel' });
+
+        if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
+            return res.status(403).json({ error: 'Channel link expired' });
+        }
+
+        if (!hlsConverter.isAvailable()) {
+            return res.status(503).json({ error: 'ffmpeg_not_available' });
+        }
+
+        const qualities = getQualitiesByChannel.all(channel.id);
+        for (const q of qualities) {
+            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url);
+        }
+
+        res.json({ warming: true, qualities: qualities.map(q => q.quality_label) });
+    });
+
+    router.get('/:channelToken/manifest-ready/:quality', (req, res) => {
+        const sessionToken = req.headers['x-session-token'] || req.query.session;
+        if (!sessionToken) return res.status(403).json({ ready: false });
+
+        const session = validateSession(db, sessionToken);
+        if (!session.valid) return res.status(403).json({ ready: false });
+
+        const channel = getChannelByToken.get(req.params.channelToken);
+        if (!channel) return res.status(404).json({ ready: false });
+
+        if (session.channel_id !== channel.id) return res.status(403).json({ ready: false });
+
+        const quality = getQualityByChannelAndLabel.get(channel.id, req.params.quality);
+        if (!quality) return res.status(404).json({ ready: false });
+
+        const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label);
+        res.json({ ready });
+    });
 
     router.get('/:channelToken/:quality/index.m3u8', async (req, res) => {
         const validation = validateHlsSession(req);

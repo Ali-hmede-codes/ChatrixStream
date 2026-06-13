@@ -13,6 +13,9 @@
     let nativeRetryCount = 0;
     let maxNativeRetries = 30;
     let userUnmuted = false;
+    let isWarmingUp = false;
+    let tapToPlayPending = false;
+    let pendingQuality = null;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -28,8 +31,19 @@
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     const videoContainer = document.getElementById('video-container');
     const unmuteBtn = document.getElementById('unmute-btn');
+    const tapToPlayOverlay = document.getElementById('tap-to-play-overlay');
+
+    function isIOS() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function isSafari() {
+        return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    }
 
     function shouldUseNativeHls() {
+        if (isIOS()) return true;
         var v = document.createElement('video');
         return v.canPlayType('application/vnd.apple.mpegurl') === 'probably' ||
                v.canPlayType('application/x-mpegURL') === 'probably';
@@ -91,11 +105,36 @@
         }
 
         buildQualityButtons(channelInfo.qualities);
-
         connectSSE();
+
+        // Pre-warm all qualities: start FFmpeg processes for all qualities
+        // so quality switching is instant
+        prewarmAllQualities();
 
         const defaultQuality = channelInfo.qualities.sort((a, b) => a.sort_order - b.sort_order)[0];
         startStream(defaultQuality.label);
+    }
+
+    function prewarmAllQualities() {
+        if (!channelInfo || !channelInfo.qualities) return;
+
+        // Use the warmup endpoint to start FFmpeg for all qualities at once
+        fetch('/hls/' + channelInfo.channel_token + '/warmup?session=' + encodeURIComponent(sessionData.session_token), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-session-token': sessionData.session_token
+            }
+        }).catch(function() {
+            // Fallback: warm up each quality individually via manifest requests
+            channelInfo.qualities.forEach(function(q) {
+                fetch(getHlsUrl(q.label), {
+                    headers: { 'x-session-token': sessionData.session_token }
+                }).catch(function() {});
+            });
+        });
+
+        isWarmingUp = true;
     }
 
     function buildQualityButtons(qualities) {
@@ -195,6 +234,17 @@
         }
     });
 
+    // Tap-to-play handler for iOS
+    tapToPlayOverlay.addEventListener('click', function() {
+        tapToPlayOverlay.classList.add('hidden');
+        tapToPlayPending = false;
+        if (pendingQuality) {
+            var q = pendingQuality;
+            pendingQuality = null;
+            startNativeStreamWithManifestCheck(q);
+        }
+    });
+
     function getHlsUrl(quality) {
         return window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
     }
@@ -214,8 +264,8 @@
             var hlsUrl = getHlsUrl(quality);
 
             hlsPlayer = new Hls({
-                liveSyncDurationCount: 6,
-                liveMaxLatencyDurationCount: 12,
+                liveSyncDurationCount: 3,
+                liveMaxLatencyDurationCount: 9,
                 liveDurationInfinity: true,
                 liveSyncOnStall: true,
                 maxBufferLength: 30,
@@ -226,12 +276,16 @@
                 enableWorker: true,
                 backBufferLength: 90,
                 progressive: true,
-                manifestLoadingRetryDelay: 2000,
-                manifestLoadingMaxRetry: 10,
+                startLevel: -1,
+                manifestLoadingRetryDelay: 1000,
+                manifestLoadingMaxRetry: 15,
                 manifestLoadingMaxRetryTimeout: 60000,
-                levelLoadingRetryDelay: 2000,
-                levelLoadingMaxRetry: 10,
+                levelLoadingRetryDelay: 1000,
+                levelLoadingMaxRetry: 15,
                 levelLoadingMaxRetryTimeout: 60000,
+                fragLoadingRetryDelay: 1000,
+                fragLoadingMaxRetry: 10,
+                fragLoadingMaxRetryTimeout: 60000,
                 xhrSetup: function(xhr, url) {
                     xhr.setRequestHeader('x-session-token', sessionData.session_token);
                 }
@@ -291,6 +345,62 @@
     }
 
     function startNativeStream(quality) {
+        // On iOS, we need to check if the manifest is ready before setting src.
+        // If manifest isn't ready, iOS Safari's native HLS player will fail
+        // silently and never recover.
+        if (isIOS() || isSafari()) {
+            startNativeStreamWithManifestCheck(quality);
+        } else {
+            startNativeStreamDirect(quality);
+        }
+    }
+
+    async function startNativeStreamWithManifestCheck(quality) {
+        if (currentNativeCleanup) {
+            currentNativeCleanup();
+            currentNativeCleanup = null;
+        }
+
+        nativeHasPlayed = false;
+        showLoading('Loading ' + quality.toUpperCase() + ' stream...');
+
+        // Check if manifest is ready before setting video src
+        var maxAttempts = 20;
+        var attempt = 0;
+        var checkInterval = 1500;
+
+        while (attempt < maxAttempts) {
+            attempt++;
+            try {
+                var readyResp = await fetch(
+                    '/hls/' + channelInfo.channel_token + '/manifest-ready/' + quality + '?session=' + encodeURIComponent(sessionData.session_token),
+                    { headers: { 'x-session-token': sessionData.session_token } }
+                );
+                var readyData = await readyResp.json();
+
+                if (readyData.ready) {
+                    break;
+                }
+            } catch (e) {
+                // Network error, keep trying
+            }
+
+            if (attempt >= maxAttempts) {
+                showError('Stream Error', 'Stream failed to start. Please try again.');
+                return;
+            }
+
+            showLoading('Stream starting... (' + attempt + '/' + maxAttempts + ')');
+            await new Promise(function(resolve) { setTimeout(resolve, checkInterval); });
+        }
+
+        // If we got here, manifest is ready. Now try to play.
+        // On iOS, we may need a user gesture for play() to work.
+        // Try autoplay first, and if blocked, show tap-to-play.
+        startNativeStreamDirect(quality, true);
+    }
+
+    function startNativeStreamDirect(quality, manifestIsReady) {
         if (currentNativeCleanup) {
             currentNativeCleanup();
             currentNativeCleanup = null;
@@ -300,23 +410,37 @@
 
         videoEl.muted = !userUnmuted;
         nativeHasPlayed = false;
-        showLoading('Loading ' + quality.toUpperCase() + ' stream...');
+        if (manifestIsReady) {
+            showLoading('Starting playback...');
+        } else {
+            showLoading('Loading ' + quality.toUpperCase() + ' stream...');
+        }
 
         videoEl.src = hlsUrl;
 
         var playPromise = videoEl.play();
         if (playPromise !== undefined) {
             playPromise.then(function() {
+                tapToPlayOverlay.classList.add('hidden');
+                tapToPlayPending = false;
                 if (!videoEl.muted) {
                     unmuteBtn.classList.add('hidden');
                 }
-            }).catch(function() {
-                if (userUnmuted) {
-                    videoEl.muted = true;
-                    unmuteBtn.classList.remove('hidden');
-                    videoEl.play().catch(function() {});
+            }).catch(function(err) {
+                // Autoplay was blocked - show tap-to-play on iOS
+                if (isIOS() || isSafari()) {
+                    tapToPlayOverlay.classList.remove('hidden');
+                    tapToPlayPending = true;
+                    pendingQuality = quality;
+                    hideLoading();
                 } else {
-                    unmuteBtn.classList.remove('hidden');
+                    if (userUnmuted) {
+                        videoEl.muted = true;
+                        unmuteBtn.classList.remove('hidden');
+                        videoEl.play().catch(function() {});
+                    } else {
+                        unmuteBtn.classList.remove('hidden');
+                    }
                 }
             });
         }
@@ -331,6 +455,8 @@
                 hideLoading();
                 nativeHasPlayed = true;
                 nativeStallCount = 0;
+                tapToPlayOverlay.classList.add('hidden');
+                tapToPlayPending = false;
                 if (videoEl.muted) {
                     unmuteBtn.classList.remove('hidden');
                 }
@@ -372,7 +498,12 @@
                     reconnectTimer = null;
                     videoEl.removeAttribute('src');
                     videoEl.load();
-                    startNativeStream(quality);
+                    // On iOS, re-check manifest before retrying
+                    if (isIOS() || isSafari()) {
+                        startNativeStreamWithManifestCheck(quality);
+                    } else {
+                        startNativeStreamDirect(quality);
+                    }
                 }, delay);
             } else {
                 showError('Stream Error', 'Failed to start the stream. Please try again later.');
@@ -412,7 +543,11 @@
         videoEl.load();
         reconnectTimer = setTimeout(function() {
             reconnectTimer = null;
-            startNativeStream(quality);
+            if (isIOS() || isSafari()) {
+                startNativeStreamWithManifestCheck(quality);
+            } else {
+                startNativeStreamDirect(quality);
+            }
         }, 3000);
     }
 
@@ -441,6 +576,7 @@
     function showError(title, desc) {
         errorOverlay.classList.remove('hidden');
         loadingOverlay.classList.add('hidden');
+        tapToPlayOverlay.classList.add('hidden');
         errorTitle.textContent = title;
         errorDesc.textContent = desc;
     }
