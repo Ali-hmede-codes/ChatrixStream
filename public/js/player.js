@@ -214,19 +214,18 @@
             var hlsUrl = getHlsUrl(quality);
 
             hlsPlayer = new Hls({
-                liveSyncDurationCount: 3,
-                liveMaxLatencyDurationCount: 6,
+                liveSyncDurationCount: 6,
+                liveMaxLatencyDurationCount: 12,
                 liveDurationInfinity: true,
                 liveSyncOnStall: true,
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
                 maxBufferSize: 60 * 1000 * 1000,
-                maxBufferHole: 0.5,
-                lowLatencyMode: true,
+                maxBufferHole: 2.0,
+                lowLatencyMode: false,
                 enableWorker: true,
                 backBufferLength: 90,
                 progressive: true,
-                lowLatencyMaxDrift: 0,
                 manifestLoadingRetryDelay: 2000,
                 manifestLoadingMaxRetry: 10,
                 manifestLoadingMaxRetryTimeout: 60000,
