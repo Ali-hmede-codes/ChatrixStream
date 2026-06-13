@@ -143,7 +143,11 @@ module.exports = function(db, hlsConverter) {
             return res.end(JSON.stringify({ error: 'stream_not_ready', message: 'Stream is starting up, please retry' }));
         }
 
-        const rewritten = hlsConverter.rewriteManifest(manifest, validation.sessionToken);
+        const rewritten = hlsConverter.rewriteManifest(
+            manifest,
+            validation.sessionToken,
+            hlsConverter.getDiscontinuityCount(validation.channel.id, validation.quality.quality_label)
+        );
 
         res.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',

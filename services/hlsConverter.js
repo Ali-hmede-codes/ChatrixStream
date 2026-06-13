@@ -108,7 +108,9 @@ class HlsConverter {
             restartTimer: null,
             restarting: false,
             retryCount: 0,
-            manifestReady: false
+            manifestReady: false,
+            discontinuityCount: 0,
+            started: false
         };
 
         this.activeConversions.set(key, state);
@@ -157,6 +159,12 @@ class HlsConverter {
             state.ffmpegProcess = null;
         }
 
+        // Increment discontinuity counter on each FFmpeg restart (not first start)
+        if (state.started) {
+            state.discontinuityCount++;
+        }
+        state.started = true;
+
         const parsedUrl = new URL(state.streamUrl);
         const args = [];
 
@@ -172,9 +180,9 @@ class HlsConverter {
 
         args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
-        args.push('-fflags', '+genpts+discardcorrupt');
-        args.push('-analyzeduration', '2000000');
-        args.push('-probesize', '500000');
+        args.push('-fflags', '+genpts+igndts+discardcorrupt');
+        args.push('-analyzeduration', '5000000');
+        args.push('-probesize', '1000000');
         args.push('-timeout', '10000000');
         args.push('-reconnect', '1');
         args.push('-reconnect_streamed', '1');
@@ -183,9 +191,11 @@ class HlsConverter {
         args.push('-i', urlWithoutCreds);
         args.push('-c:v', 'copy');
         args.push('-c:a', 'aac');
+        args.push('-af', 'aresample=async=1000');
         args.push('-ar', '48000');
         args.push('-ac', '2');
         args.push('-b:a', '128k');
+        args.push('-mpegts_flags', '+resend_headers');
         args.push('-f', 'hls');
         args.push('-hls_time', String(this.segmentDuration));
         args.push('-hls_list_size', String(this.listSize));
@@ -333,9 +343,10 @@ class HlsConverter {
         });
     }
 
-    rewriteManifest(manifestContent, sessionToken) {
+    rewriteManifest(manifestContent, sessionToken, discontinuityCount) {
         let hasPlaylistType = false;
         let hasIndependentSegments = false;
+        let hasDiscontinuitySequence = false;
         const lines = manifestContent.split('\n').map(line => {
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
                 hasPlaylistType = true;
@@ -343,6 +354,11 @@ class HlsConverter {
             }
             if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
                 hasIndependentSegments = true;
+            }
+            if (line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
+                hasDiscontinuitySequence = true;
+                // Replace with our tracked count
+                return '#EXT-X-DISCONTINUITY-SEQUENCE:' + (discontinuityCount || 0);
             }
             if (line.startsWith('#EXT-X-ENDLIST')) {
                 return null;
@@ -366,7 +382,21 @@ class HlsConverter {
             lines.splice(indInsertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
 
+        // Add discontinuity sequence tag if FFmpeg has restarted
+        // This tells the player to expect timestamp jumps between segments
+        if (!hasDiscontinuitySequence && discontinuityCount > 0) {
+            const ptIdx = lines.findIndex(l => l.startsWith('#EXT-X-PLAYLIST-TYPE'));
+            const discInsertIdx = ptIdx !== -1 ? ptIdx + 1 : insertIdx + 1;
+            lines.splice(discInsertIdx, 0, '#EXT-X-DISCONTINUITY-SEQUENCE:' + discontinuityCount);
+        }
+
         return lines.join('\n');
+    }
+
+    getDiscontinuityCount(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        return state ? state.discontinuityCount : 0;
     }
 
     getSegmentPath(channelId, qualityLabel, segmentName) {

@@ -19,6 +19,7 @@
     let iosStreamGeneration = 0;
     let wasPlayingBeforeHidden = false;
     let isQualitySwitching = false;
+    let consecutiveMediaErrors = 0;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -285,7 +286,7 @@
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
                 maxBufferSize: 60 * 1000 * 1000,
-                maxBufferHole: 2.0,
+                maxBufferHole: 0.5,
                 lowLatencyMode: false,
                 enableWorker: true,
                 backBufferLength: 90,
@@ -319,21 +320,41 @@
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
+                            consecutiveMediaErrors = 0;
                             console.warn('Fatal network error, reconnecting with backoff...');
                             scheduleReconnect();
                             break;
                         case Hls.ErrorTypes.MEDIA_ERROR:
-                            console.warn('Fatal media error, attempting recovery...');
-                            hlsPlayer.recoverMediaError();
+                            consecutiveMediaErrors++;
+                            if (consecutiveMediaErrors <= 1) {
+                                // First attempt: try quick recovery
+                                console.warn('Fatal media error, attempting recovery...');
+                                hlsPlayer.recoverMediaError();
+                            } else {
+                                // Repeated media errors = audio decoder stuck with wrong pitch.
+                                // recoverMediaError() doesn't fully reset the audio pipeline.
+                                // Do a full source reload to reinitialize everything.
+                                console.warn('Repeated media error (' + consecutiveMediaErrors + '), doing full source reload...');
+                                consecutiveMediaErrors = 0;
+                                destroyPlayer();
+                                startStream(currentQuality);
+                            }
                             break;
                         default:
+                            consecutiveMediaErrors = 0;
                             console.error('Fatal error, cannot recover');
                             destroyPlayer();
                             showError('Stream Error', 'An unrecoverable error occurred. Please try again.');
                             break;
                     }
-                } else if (data.details === 'manifestLoadError' || data.details === 'levelLoadError') {
-                    showLoading('Stream starting, waiting...');
+                } else {
+                    // Non-fatal: reset counter on successful operation
+                    if (data.details !== 'manifestLoadError' && data.details !== 'levelLoadError') {
+                        consecutiveMediaErrors = 0;
+                    }
+                    if (data.details === 'manifestLoadError' || data.details === 'levelLoadError') {
+                        showLoading('Stream starting, waiting...');
+                    }
                 }
             });
 
