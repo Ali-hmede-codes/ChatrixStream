@@ -16,6 +16,7 @@
     let isWarmingUp = false;
     let tapToPlayPending = false;
     let pendingQuality = null;
+    let iosStreamGeneration = 0;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -172,7 +173,11 @@
             }
             nativeRetryCount = 0;
             nativeHasPlayed = false;
-            startNativeStream(newQuality);
+            // User clicked a quality button = user gesture context preserved.
+            // Call startNativeStreamDirect directly so play() is called
+            // synchronously within the click handler (required by iOS).
+            // Pre-warming ensures manifest is likely ready already.
+            startNativeStreamDirect(newQuality, true);
         } else if (hlsPlayer) {
             var hlsUrl = getHlsUrl(newQuality);
             hlsPlayer.loadSource(hlsUrl);
@@ -235,13 +240,17 @@
     });
 
     // Tap-to-play handler for iOS
+    // CRITICAL: Must call startNativeStreamDirect synchronously here.
+    // iOS Safari requires play() to be in the user's tap gesture context.
+    // Any async operation between the tap and play() breaks the gesture chain
+    // and causes iOS to block playback.
     tapToPlayOverlay.addEventListener('click', function() {
         tapToPlayOverlay.classList.add('hidden');
         tapToPlayPending = false;
         if (pendingQuality) {
             var q = pendingQuality;
             pendingQuality = null;
-            startNativeStreamWithManifestCheck(q);
+            startNativeStreamDirect(q, true);
         }
     });
 
@@ -345,27 +354,37 @@
     }
 
     function startNativeStream(quality) {
-        // On iOS, we need to check if the manifest is ready before setting src.
-        // If manifest isn't ready, iOS Safari's native HLS player will fail
-        // silently and never recover.
+        // On iOS, we need to check manifest readiness BEFORE showing the
+        // tap-to-play overlay, so that when the user taps, we can call
+        // play() synchronously without any async delay (preserving gesture context).
         if (isIOS() || isSafari()) {
-            startNativeStreamWithManifestCheck(quality);
+            startIOSStream(quality);
         } else {
             startNativeStreamDirect(quality);
         }
     }
 
-    async function startNativeStreamWithManifestCheck(quality) {
+    async function startIOSStream(quality) {
+        var generation = ++iosStreamGeneration;
+
         if (currentNativeCleanup) {
             currentNativeCleanup();
             currentNativeCleanup = null;
         }
 
         nativeHasPlayed = false;
-        showLoading('Loading ' + quality.toUpperCase() + ' stream...');
+        pendingQuality = quality;
 
-        // Check if manifest is ready before setting video src
-        var maxAttempts = 20;
+        showLoading('Preparing stream...');
+
+        // Check manifest readiness BEFORE showing tap-to-play overlay.
+        // CRITICAL for iOS: The manifest must be verified BEFORE the user taps,
+        // so that when they do tap, we can call play() SYNCHRONOUSLY without
+        // any async delay. iOS Safari requires play() to be called within the
+        // same synchronous execution context as the user's tap gesture. Any
+        // await/setTimeout between the tap and play() breaks the gesture chain,
+        // causing iOS to block playback entirely.
+        var maxAttempts = 30;
         var attempt = 0;
         var checkInterval = 1500;
 
@@ -385,19 +404,27 @@
                 // Network error, keep trying
             }
 
+            // Check if a newer stream request superseded us
+            if (generation !== iosStreamGeneration) return;
+
             if (attempt >= maxAttempts) {
                 showError('Stream Error', 'Stream failed to start. Please try again.');
                 return;
             }
 
-            showLoading('Stream starting... (' + attempt + '/' + maxAttempts + ')');
+            showLoading('Preparing stream... (' + attempt + '/' + maxAttempts + ')');
             await new Promise(function(resolve) { setTimeout(resolve, checkInterval); });
         }
 
-        // If we got here, manifest is ready. Now try to play.
-        // On iOS, we may need a user gesture for play() to work.
-        // Try autoplay first, and if blocked, show tap-to-play.
-        startNativeStreamDirect(quality, true);
+        // Check if superseded by a newer request
+        if (generation !== iosStreamGeneration) return;
+
+        // Manifest is ready. Show tap-to-play overlay.
+        // When the user taps, startNativeStreamDirect will be called
+        // synchronously, preserving the iOS user gesture context for play().
+        tapToPlayOverlay.classList.remove('hidden');
+        tapToPlayPending = true;
+        hideLoading();
     }
 
     function startNativeStreamDirect(quality, manifestIsReady) {
@@ -500,9 +527,10 @@
                     reconnectTimer = null;
                     videoEl.removeAttribute('src');
                     videoEl.load();
-                    // On iOS, re-check manifest before retrying
+                    // On iOS, use startIOSStream which checks manifest
+                    // and shows tap-to-play (preserving gesture context)
                     if (isIOS() || isSafari()) {
-                        startNativeStreamWithManifestCheck(quality);
+                        startIOSStream(quality);
                     } else {
                         startNativeStreamDirect(quality);
                     }
@@ -546,7 +574,7 @@
         reconnectTimer = setTimeout(function() {
             reconnectTimer = null;
             if (isIOS() || isSafari()) {
-                startNativeStreamWithManifestCheck(quality);
+                startIOSStream(quality);
             } else {
                 startNativeStreamDirect(quality);
             }
