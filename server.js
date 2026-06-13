@@ -86,17 +86,27 @@ app.get('/admin', (req, res) => {
 function cleanupExpired() {
     const now = new Date().toISOString();
 
-    // Delete expired sessions and invite codes
+    const expiredSessions = db.prepare('SELECT channel_id FROM sessions WHERE expires_at < ?').all(now);
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
     db.prepare('DELETE FROM invite_codes WHERE expires_at < ?').run(now);
 
-    // Stop streams for channels whose link has expired
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
         streamManager.stopAllStreamsForChannel(ch.id);
         hlsConverter.stopAllForChannel(ch.id);
-        // Expire any remaining sessions for this channel
         db.prepare('UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?').run(now, ch.id, now);
+    }
+
+    for (const es of expiredSessions) {
+        const channelId = es.channel_id;
+        const isExpiredChannel = expiredChannels.some(c => c.id === channelId);
+        if (!isExpiredChannel) {
+            const remainingValid = db.prepare('SELECT COUNT(*) as cnt FROM sessions WHERE channel_id = ? AND expires_at > ?').get(channelId, now);
+            if (remainingValid.cnt === 0) {
+                streamManager.stopAllStreamsForChannel(channelId);
+                hlsConverter.stopAllForChannel(channelId);
+            }
+        }
     }
 
     console.log('Cleanup: removed expired records at ' + now);

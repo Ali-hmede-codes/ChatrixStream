@@ -125,15 +125,21 @@
     function prewarmAllQualities() {
         if (!channelInfo || !channelInfo.qualities) return;
 
-        // Use the warmup endpoint to start FFmpeg for all qualities at once
         fetch('/hls/' + channelInfo.channel_token + '/warmup?session=' + encodeURIComponent(sessionData.session_token), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'x-session-token': sessionData.session_token
             }
+        }).then(function(res) {
+            if (res.status === 403) {
+                return res.json().then(function(data) {
+                    if (data.expired) {
+                        handleSessionExpired(data.error || 'Session expired');
+                    }
+                });
+            }
         }).catch(function() {
-            // Fallback: warm up each quality individually via manifest requests
             channelInfo.qualities.forEach(function(q) {
                 fetch(getHlsUrl(q.label), {
                     headers: { 'x-session-token': sessionData.session_token }
@@ -325,7 +331,6 @@
             hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
                 console.error('HLS error:', data.type, data.details, data);
 
-                // Check if the error is a 403 (session/channel expired) - stop retrying
                 if (data.details === 'manifestLoadError' || data.details === 'levelLoadError' || data.details === 'fragLoadError') {
                     var response = data.response || data.context && data.context.response;
                     if (response && (response.code === 403 || response.status === 403)) {
@@ -333,9 +338,19 @@
                         handleSessionExpired('Session expired');
                         return;
                     }
+                    try {
+                        var responseText = response && response.text;
+                        if (responseText && typeof responseText === 'string') {
+                            var parsed = JSON.parse(responseText);
+                            if (parsed.expired) {
+                                console.warn('HLS expired response detected, stopping player');
+                                handleSessionExpired(parsed.error || 'Session expired');
+                                return;
+                            }
+                        }
+                    } catch(e) {}
                 }
 
-                // Also check via sessionExpired flag
                 if (sessionExpired) return;
 
                 if (data.fatal) {
@@ -442,7 +457,17 @@
                     '/hls/' + channelInfo.channel_token + '/manifest-ready/' + quality + '?session=' + encodeURIComponent(sessionData.session_token),
                     { headers: { 'x-session-token': sessionData.session_token } }
                 );
+                if (readyResp.status === 403) {
+                    var errData = await readyResp.json().catch(function() { return {}; });
+                    handleSessionExpired(errData.error || 'Session expired');
+                    return;
+                }
                 var readyData = await readyResp.json();
+
+                if (readyData.expired) {
+                    handleSessionExpired(readyData.error || 'Session expired');
+                    return;
+                }
 
                 if (readyData.ready) {
                     break;
@@ -571,52 +596,59 @@
             }
         }
         function onError() {
-            nativeRetryCount++;
+            if (sessionExpired) return;
 
-            // If this error is from a quality switch on iOS/Safari,
-            // skip the long retry loop and immediately fall back to
-            // startIOSStream which properly polls for manifest readiness.
-            // This avoids the "1/30 ... 30/30" retry countdown UX.
-            if (isQualitySwitching && (isIOS() || isSafari())) {
-                isQualitySwitching = false;
-                nativeRetryCount = 0;
-                currentNativeCleanup();
-                currentNativeCleanup = null;
-                videoEl.removeAttribute('src');
-                videoEl.load();
-                console.log('Quality switch failed, falling back to manifest polling...');
-                startIOSStream(quality);
-                return;
+            var mediaError = videoEl.error;
+            if (mediaError && mediaError.code === MediaError.MEDIA_ERR_DECODE) {
+                nativeRetryCount++;
+            } else if (mediaError) {
+                nativeRetryCount++;
             }
 
-            if (nativeRetryCount <= maxNativeRetries) {
-                console.warn('Native HLS error, retrying... (' + nativeRetryCount + '/' + maxNativeRetries + ')');
-                currentNativeCleanup();
-                currentNativeCleanup = null;
-                showLoading('Stream starting...');
-                var delay = Math.min(2000 * nativeRetryCount, 30000);
-                reconnectTimer = setTimeout(function() {
-                    reconnectTimer = null;
+            checkSessionExpired().then(function(expired) {
+                if (expired) {
+                    handleSessionExpired('Session expired');
+                    return;
+                }
+
+                if (isQualitySwitching && (isIOS() || isSafari())) {
+                    isQualitySwitching = false;
+                    nativeRetryCount = 0;
+                    currentNativeCleanup();
+                    currentNativeCleanup = null;
                     videoEl.removeAttribute('src');
                     videoEl.load();
-                    // On iOS, use startIOSStream which checks manifest
-                    // and shows tap-to-play (preserving gesture context)
-                    if (isIOS() || isSafari()) {
-                        startIOSStream(quality);
-                    } else {
-                        startNativeStreamDirect(quality);
-                    }
-                }, delay);
-            } else {
-                showError('Stream Error', 'Failed to start the stream. Please try again later.');
-                errorBtn.textContent = 'Retry';
-                errorBtn.onclick = function() {
-                    errorOverlay.classList.add('hidden');
-                    errorBtn.textContent = 'Get New Code';
-                    errorBtn.onclick = function() { window.location.href = '/'; };
-                    startStream(currentQuality);
-                };
-            }
+                    startIOSStream(quality);
+                    return;
+                }
+
+                if (nativeRetryCount <= maxNativeRetries) {
+                    console.warn('Native HLS error, retrying... (' + nativeRetryCount + '/' + maxNativeRetries + ')');
+                    currentNativeCleanup();
+                    currentNativeCleanup = null;
+                    showLoading('Stream starting...');
+                    var delay = Math.min(2000 * nativeRetryCount, 30000);
+                    reconnectTimer = setTimeout(function() {
+                        reconnectTimer = null;
+                        videoEl.removeAttribute('src');
+                        videoEl.load();
+                        if (isIOS() || isSafari()) {
+                            startIOSStream(quality);
+                        } else {
+                            startNativeStreamDirect(quality);
+                        }
+                    }, delay);
+                } else {
+                    showError('Stream Error', 'Failed to start the stream. Please try again later.');
+                    errorBtn.textContent = 'Retry';
+                    errorBtn.onclick = function() {
+                        errorOverlay.classList.add('hidden');
+                        errorBtn.textContent = 'Get New Code';
+                        errorBtn.onclick = function() { window.location.href = '/'; };
+                        startStream(currentQuality);
+                    };
+                }
+            });
         }
 
         videoEl.addEventListener('canplay', onCanPlay);
@@ -643,6 +675,7 @@
     }
 
     function reconnectNativeStream(quality) {
+        if (sessionExpired) return;
         if (currentNativeCleanup) {
             currentNativeCleanup();
             currentNativeCleanup = null;
@@ -650,28 +683,41 @@
         showLoading('Reconnecting...');
         videoEl.removeAttribute('src');
         videoEl.load();
-        reconnectTimer = setTimeout(function() {
-            reconnectTimer = null;
-            if (isIOS() || isSafari()) {
-                startIOSStream(quality);
-            } else {
-                startNativeStreamDirect(quality);
+        checkSessionExpired().then(function(expired) {
+            if (expired) {
+                handleSessionExpired('Session expired');
+                return;
             }
-        }, 3000);
+            reconnectTimer = setTimeout(function() {
+                reconnectTimer = null;
+                if (isIOS() || isSafari()) {
+                    startIOSStream(quality);
+                } else {
+                    startNativeStreamDirect(quality);
+                }
+            }, 3000);
+        });
     }
 
     function scheduleReconnect() {
         if (reconnectTimer) return;
         if (sessionExpired) return;
 
-        destroyPlayer();
-        showLoading('Reconnecting...');
-        reconnectTimer = setTimeout(function() {
-            reconnectTimer = null;
-            startStream(currentQuality);
-        }, reconnectBackoff);
+        checkSessionExpired().then(function(expired) {
+            if (expired) {
+                handleSessionExpired('Session expired');
+                return;
+            }
 
-        reconnectBackoff = Math.min(reconnectBackoff * 1.5, maxReconnectBackoff);
+            destroyPlayer();
+            showLoading('Reconnecting...');
+            reconnectTimer = setTimeout(function() {
+                reconnectTimer = null;
+                startStream(currentQuality);
+            }, reconnectBackoff);
+
+            reconnectBackoff = Math.min(reconnectBackoff * 1.5, maxReconnectBackoff);
+        });
     }
 
     function showLoading(text) {
@@ -750,6 +796,20 @@
                 // Network error - don't kill the session, SSE will handle it
             });
         }, 30000);
+    }
+
+    function checkSessionExpired() {
+        if (sessionExpired) return Promise.resolve(true);
+        if (!sessionData) return Promise.resolve(true);
+        return fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_token: sessionData.session_token })
+        }).then(function(res) { return res.json(); }).then(function(result) {
+            return !result.valid;
+        }).catch(function() {
+            return false;
+        });
     }
 
     function handleSessionExpired(reason) {
@@ -935,26 +995,27 @@
         if (sessionExpired) return;
         if (!currentQuality) return;
 
-        if (useNativeHls) {
-            if (currentNativeCleanup) {
-                currentNativeCleanup();
-                currentNativeCleanup = null;
+        checkSessionExpired().then(function(expired) {
+            if (expired) {
+                handleSessionExpired('Session expired');
+                return;
             }
-            nativeRetryCount = 0;
-            nativeHasPlayed = false;
-            isQualitySwitching = false;
 
-            // Reload the video source entirely to re-initialize
-            // the audio/video pipeline after background restore
-            startNativeStreamDirect(currentQuality);
-        } else if (hlsPlayer) {
-            // Full destroy + recreate to reset audio/video pipeline after
-            // background restore or stale stream detection.
-            // loadSource() alone can leave stale audio codec state.
-            hlsPlayer.destroy();
-            hlsPlayer = null;
-            startStream(currentQuality);
-        }
+            if (useNativeHls) {
+                if (currentNativeCleanup) {
+                    currentNativeCleanup();
+                    currentNativeCleanup = null;
+                }
+                nativeRetryCount = 0;
+                nativeHasPlayed = false;
+                isQualitySwitching = false;
+                startNativeStreamDirect(currentQuality);
+            } else if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+                startStream(currentQuality);
+            }
+        });
     }
 
     init();

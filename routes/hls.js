@@ -65,18 +65,18 @@ module.exports = function(db, hlsConverter) {
 
     router.post('/:channelToken/warmup', (req, res) => {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
-        if (!sessionToken) return res.status(403).json({ error: 'No session token' });
+        if (!sessionToken) return res.status(403).json({ error: 'No session token', expired: true });
 
         const session = validateSession(db, sessionToken);
-        if (!session.valid) return res.status(403).json({ error: session.error });
+        if (!session.valid) return res.status(403).json({ error: session.error, expired: true });
 
         const channel = getChannelByToken.get(req.params.channelToken);
         if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
-        if (session.channel_id !== channel.id) return res.status(403).json({ error: 'Session not valid for this channel' });
+        if (session.channel_id !== channel.id) return res.status(403).json({ error: 'Session not valid for this channel', expired: true });
 
         if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
-            return res.status(403).json({ error: 'Channel link expired' });
+            return res.status(403).json({ error: 'Channel link expired', expired: true });
         }
 
         if (!hlsConverter.isAvailable()) {
@@ -93,24 +93,23 @@ module.exports = function(db, hlsConverter) {
 
     router.get('/:channelToken/manifest-ready/:quality', (req, res) => {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
-        if (!sessionToken) return res.status(403).json({ ready: false });
+        if (!sessionToken) return res.status(403).json({ ready: false, expired: true });
 
         const session = validateSession(db, sessionToken);
-        if (!session.valid) return res.status(403).json({ ready: false });
+        if (!session.valid) return res.status(403).json({ ready: false, expired: true, error: session.error });
 
         const channel = getChannelByToken.get(req.params.channelToken);
         if (!channel) return res.status(404).json({ ready: false });
 
-        if (session.channel_id !== channel.id) return res.status(403).json({ ready: false });
+        if (session.channel_id !== channel.id) return res.status(403).json({ ready: false, expired: true });
 
         const quality = getQualityByChannelAndLabel.get(channel.id, req.params.quality);
         if (!quality) return res.status(404).json({ ready: false });
 
-        // Ensure FFmpeg is running for this quality so that manifest
-        // polling can detect when it becomes ready. Without this,
-        // polling always returns false if FFmpeg was never started
-        // (e.g. after a quality switch where the initial manifest
-        // request failed before triggering ensureConversion).
+        if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
+            return res.status(403).json({ ready: false, expired: true, error: 'Channel link expired' });
+        }
+
         if (hlsConverter.isAvailable()) {
             hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url);
         }
@@ -122,8 +121,12 @@ module.exports = function(db, hlsConverter) {
     router.get('/:channelToken/:quality/index.m3u8', async (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
-            res.writeHead(403, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-            return res.end('#EXTM3U\n#EXT-X-VERSION:3\n');
+            res.writeHead(403, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(JSON.stringify({ error: validation.error, expired: true }));
         }
 
         if (!hlsConverter.isAvailable()) {
@@ -162,7 +165,12 @@ module.exports = function(db, hlsConverter) {
     router.get('/:channelToken/:quality/:segmentName', (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
-            return res.status(403).end();
+            res.writeHead(403, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(JSON.stringify({ error: validation.error, expired: true }));
         }
 
         const segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
