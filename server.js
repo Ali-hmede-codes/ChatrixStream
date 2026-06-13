@@ -56,7 +56,7 @@ app.use((req, res, next) => {
 });
 
 const redeemLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: parseInt(process.env.RATE_LIMIT_MAX) || 10 });
-const streamLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: parseInt(process.env.RATE_LIMIT_STREAM_MAX) || 30 });
+const streamLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: parseInt(process.env.RATE_LIMIT_STREAM_MAX) || 120 });
 const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));

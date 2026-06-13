@@ -49,7 +49,7 @@ module.exports = function(db, hlsConverter) {
     router.get('/:channelToken/:quality/index.m3u8', (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
-            res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+            res.writeHead(403, { 'Content-Type': 'application/vnd.apple.mpegurl' });
             return res.end('#EXTM3U\n#EXT-X-VERSION:3\n');
         }
 

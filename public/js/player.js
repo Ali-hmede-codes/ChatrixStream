@@ -6,8 +6,12 @@
     let currentQuality = null;
     let hlsPlayer = null;
     let reconnectTimer = null;
+    let reconnectBackoff = 3000;
+    let maxReconnectBackoff = 30000;
     let sseConnection = null;
     let useNativeHls = false;
+    let emptyPlaylistRetries = 0;
+    let maxEmptyPlaylistRetries = 10;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -112,6 +116,13 @@
     }
 
     function destroyPlayer() {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        emptyPlaylistRetries = 0;
+        reconnectBackoff = 3000;
+
         if (hlsPlayer) {
             hlsPlayer.destroy();
             hlsPlayer = null;
@@ -193,17 +204,30 @@
             hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
                 console.error('HLS error:', data.type, data.details, data);
 
+                if (data.details === 'levelEmptyError') {
+                    emptyPlaylistRetries++;
+                    if (emptyPlaylistRetries <= maxEmptyPlaylistRetries) {
+                        console.warn('Empty playlist (stream starting), retry ' + emptyPlaylistRetries + '/' + maxEmptyPlaylistRetries);
+                        return;
+                    }
+                    if (data.fatal) {
+                        console.warn('Stream still empty after max retries, reconnecting with backoff...');
+                        scheduleReconnect();
+                    }
+                    return;
+                }
+
+                if (data.details === 'manifestLoadError' && data.response && data.response.code === 429) {
+                    console.warn('Rate limited (429), reconnecting with backoff...');
+                    scheduleReconnect();
+                    return;
+                }
+
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
-                            console.warn('Fatal network error, attempting recovery...');
-                            hlsPlayer.startLoad();
-                            if (!reconnectTimer) {
-                                reconnectTimer = setTimeout(function() {
-                                    reconnectTimer = null;
-                                    reconnectStream();
-                                }, 10000);
-                            }
+                            console.warn('Fatal network error, reconnecting with backoff...');
+                            scheduleReconnect();
                             break;
                         case Hls.ErrorTypes.MEDIA_ERROR:
                             console.warn('Fatal media error, attempting recovery...');
@@ -277,8 +301,21 @@
         }
     }
 
-    function reconnectStream() {
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+
         destroyPlayer();
+        reconnectTimer = setTimeout(function() {
+            reconnectTimer = null;
+            reconnectStream();
+        }, reconnectBackoff);
+
+        reconnectBackoff = Math.min(reconnectBackoff * 1.5, maxReconnectBackoff);
+    }
+
+    function reconnectStream() {
+        reconnectBackoff = 3000;
+        emptyPlaylistRetries = 0;
         startStream(currentQuality);
     }
 
