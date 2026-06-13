@@ -181,7 +181,11 @@ class HlsConverter {
         args.push('-reconnect_delay_max', '5');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-i', urlWithoutCreds);
-        args.push('-c', 'copy');
+        args.push('-c:v', 'copy');
+        args.push('-c:a', 'aac');
+        args.push('-ar', '48000');
+        args.push('-ac', '2');
+        args.push('-b:a', '128k');
         args.push('-f', 'hls');
         args.push('-hls_time', String(this.segmentDuration));
         args.push('-hls_list_size', String(this.listSize));
