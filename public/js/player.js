@@ -252,10 +252,13 @@
         }
     }
 
+    var nativeHasPlayed = false;
+
     function startNativeStream(quality) {
         var hlsUrl = getHlsUrl(quality);
 
         videoEl.muted = true;
+        nativeHasPlayed = false;
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
         fetch(hlsUrl, { headers: { 'x-session-token': sessionData.session_token } }).then(function(resp) {
@@ -296,10 +299,31 @@
 
             videoEl.addEventListener('loadeddata', function onLoaded() {
                 hideLoading();
+                nativeHasPlayed = true;
                 if (videoEl.muted) {
                     unmuteBtn.classList.remove('hidden');
                 }
                 videoEl.removeEventListener('loadeddata', onLoaded);
+            });
+
+            videoEl.addEventListener('canplay', function onCanPlay() {
+                hideLoading();
+                nativeHasPlayed = true;
+                if (videoEl.muted) {
+                    unmuteBtn.classList.remove('hidden');
+                }
+                videoEl.removeEventListener('canplay', onCanPlay);
+            });
+
+            videoEl.addEventListener('timeupdate', function onTimeUpdate() {
+                if (videoEl.currentTime > 0) {
+                    hideLoading();
+                    nativeHasPlayed = true;
+                    if (videoEl.muted) {
+                        unmuteBtn.classList.remove('hidden');
+                    }
+                    videoEl.removeEventListener('timeupdate', onTimeUpdate);
+                }
             });
 
             videoEl.addEventListener('error', function onError() {
@@ -320,15 +344,17 @@
             });
 
             videoEl.addEventListener('waiting', function() {
-                showLoading('Buffering...');
+                if (!nativeHasPlayed) {
+                    showLoading('Buffering...');
+                }
             });
 
             videoEl.addEventListener('playing', function onPlaying() {
                 hideLoading();
+                nativeHasPlayed = true;
                 if (videoEl.muted) {
                     unmuteBtn.classList.remove('hidden');
                 }
-                videoEl.removeEventListener('playing', onPlaying);
             });
         }).catch(function(err) {
             if (err && err.streamNotReady) return;
