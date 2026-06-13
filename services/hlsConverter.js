@@ -157,8 +157,7 @@ class HlsConverter {
         args.push('-f', 'hls');
         args.push('-hls_time', String(this.segmentDuration));
         args.push('-hls_list_size', String(this.listSize));
-        args.push('-hls_flags', 'delete_segments+program_date_time');
-        args.push('-hls_playlist_type', 'event');
+        args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');
@@ -308,26 +307,30 @@ class HlsConverter {
         const lines = manifestContent.split('\n').map(line => {
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
                 hasPlaylistType = true;
+                return '#EXT-X-PLAYLIST-TYPE:LIVE';
             }
             if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
                 hasIndependentSegments = true;
+            }
+            if (line.startsWith('#EXT-X-ENDLIST')) {
+                return null;
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
                 return line + '?session=' + sessionToken;
             }
             return line;
-        });
+        }).filter(line => line !== null);
 
         const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
         const insertIdx = versionIdx !== -1 ? versionIdx + 1 : 1;
 
         if (!hasPlaylistType) {
-            lines.splice(insertIdx, 0, '#EXT-X-PLAYLIST-TYPE:EVENT');
+            lines.splice(insertIdx, 0, '#EXT-X-PLAYLIST-TYPE:LIVE');
         }
 
         if (!hasIndependentSegments) {
             const ptIdx = lines.findIndex(l => l.startsWith('#EXT-X-PLAYLIST-TYPE'));
-            const indInsertIdx = ptIdx !== -1 ? ptIdx : insertIdx;
+            const indInsertIdx = ptIdx !== -1 ? ptIdx + 1 : insertIdx + 1;
             lines.splice(indInsertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
 

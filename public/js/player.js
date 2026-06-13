@@ -12,6 +12,7 @@
     let useNativeHls = false;
     let nativeRetryCount = 0;
     let maxNativeRetries = 30;
+    let userUnmuted = false;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -112,13 +113,31 @@
     function switchQuality(newQuality) {
         if (newQuality === currentQuality) return;
 
-        destroyPlayer();
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        reconnectBackoff = 2000;
 
         document.querySelectorAll('.quality-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.quality === newQuality);
         });
 
-        startStream(newQuality);
+        currentQuality = newQuality;
+        showLoading('Loading ' + newQuality.toUpperCase() + ' stream...');
+
+        if (useNativeHls) {
+            if (currentNativeCleanup) {
+                currentNativeCleanup();
+                currentNativeCleanup = null;
+            }
+            nativeRetryCount = 0;
+            nativeHasPlayed = false;
+            startNativeStream(newQuality);
+        } else if (hlsPlayer) {
+            var hlsUrl = getHlsUrl(newQuality);
+            hlsPlayer.loadSource(hlsUrl);
+        }
     }
 
     var nativeHasPlayed = false;
@@ -151,6 +170,7 @@
 
     function tryUnmute() {
         videoEl.muted = false;
+        userUnmuted = true;
         var playPromise = videoEl.play();
         if (playPromise !== undefined) {
             playPromise.then(function() {
@@ -197,6 +217,7 @@
                 liveSyncDurationCount: 3,
                 liveMaxLatencyDurationCount: 6,
                 liveDurationInfinity: true,
+                liveSyncOnStall: true,
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
                 maxBufferSize: 60 * 1000 * 1000,
@@ -217,7 +238,7 @@
                 }
             });
 
-            videoEl.muted = true;
+            videoEl.muted = !userUnmuted;
             hlsPlayer.loadSource(hlsUrl);
             hlsPlayer.attachMedia(videoEl);
 
@@ -278,7 +299,7 @@
 
         var hlsUrl = getHlsUrl(quality);
 
-        videoEl.muted = true;
+        videoEl.muted = !userUnmuted;
         nativeHasPlayed = false;
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
@@ -286,8 +307,18 @@
 
         var playPromise = videoEl.play();
         if (playPromise !== undefined) {
-            playPromise.catch(function() {
-                unmuteBtn.classList.remove('hidden');
+            playPromise.then(function() {
+                if (!videoEl.muted) {
+                    unmuteBtn.classList.add('hidden');
+                }
+            }).catch(function() {
+                if (userUnmuted) {
+                    videoEl.muted = true;
+                    unmuteBtn.classList.remove('hidden');
+                    videoEl.play().catch(function() {});
+                } else {
+                    unmuteBtn.classList.remove('hidden');
+                }
             });
         }
 

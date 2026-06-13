@@ -74,8 +74,10 @@ module.exports = function(db, hlsConverter) {
 
         res.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',
-            'Cache-Control': 'no-cache, no-store, no-transform',
-            'Access-Control-Allow-Origin': '*'
+            'Cache-Control': 'no-cache, no-store, no-transform, must-revalidate',
+            'Pragma': 'no-cache',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Content-Type, Retry-After'
         });
         res.end(rewritten);
     });
