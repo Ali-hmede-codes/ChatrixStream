@@ -17,6 +17,8 @@
     let tapToPlayPending = false;
     let pendingQuality = null;
     let iosStreamGeneration = 0;
+    let wasPlayingBeforeHidden = false;
+    let isQualitySwitching = false;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -173,10 +175,13 @@
             }
             nativeRetryCount = 0;
             nativeHasPlayed = false;
+            isQualitySwitching = true;
             // User clicked a quality button = user gesture context preserved.
             // Call startNativeStreamDirect directly so play() is called
             // synchronously within the click handler (required by iOS).
             // Pre-warming ensures manifest is likely ready already.
+            // If manifest is NOT ready, the error handler will quickly
+            // fall back to startIOSStream for proper manifest polling.
             startNativeStreamDirect(newQuality, true);
         } else if (hlsPlayer) {
             var hlsUrl = getHlsUrl(newQuality);
@@ -409,6 +414,13 @@
 
             if (attempt >= maxAttempts) {
                 showError('Stream Error', 'Stream failed to start. Please try again.');
+                errorBtn.textContent = 'Retry';
+                errorBtn.onclick = function() {
+                    errorOverlay.classList.add('hidden');
+                    errorBtn.textContent = 'Get New Code';
+                    errorBtn.onclick = function() { window.location.href = '/'; };
+                    startStream(currentQuality);
+                };
                 return;
             }
 
@@ -482,6 +494,7 @@
                 hideLoading();
                 nativeHasPlayed = true;
                 nativeStallCount = 0;
+                isQualitySwitching = false;
                 tapToPlayOverlay.classList.add('hidden');
                 tapToPlayPending = false;
                 if (videoEl.muted) {
@@ -517,6 +530,23 @@
         }
         function onError() {
             nativeRetryCount++;
+
+            // If this error is from a quality switch on iOS/Safari,
+            // skip the long retry loop and immediately fall back to
+            // startIOSStream which properly polls for manifest readiness.
+            // This avoids the "1/30 ... 30/30" retry countdown UX.
+            if (isQualitySwitching && (isIOS() || isSafari())) {
+                isQualitySwitching = false;
+                nativeRetryCount = 0;
+                currentNativeCleanup();
+                currentNativeCleanup = null;
+                videoEl.removeAttribute('src');
+                videoEl.load();
+                console.log('Quality switch failed, falling back to manifest polling...');
+                startIOSStream(quality);
+                return;
+            }
+
             if (nativeRetryCount <= maxNativeRetries) {
                 console.warn('Native HLS error, retrying... (' + nativeRetryCount + '/' + maxNativeRetries + ')');
                 currentNativeCleanup();
@@ -537,6 +567,13 @@
                 }, delay);
             } else {
                 showError('Stream Error', 'Failed to start the stream. Please try again later.');
+                errorBtn.textContent = 'Retry';
+                errorBtn.onclick = function() {
+                    errorOverlay.classList.add('hidden');
+                    errorBtn.textContent = 'Get New Code';
+                    errorBtn.onclick = function() { window.location.href = '/'; };
+                    startStream(currentQuality);
+                };
             }
         }
 
@@ -753,6 +790,86 @@
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     videoContainer.addEventListener('dblclick', toggleFullscreen);
+
+    // Handle page visibility changes (Safari/iOS background and reopen)
+    // When Safari sends the page to the background, the video gets paused
+    // and the audio pipeline can die. When the user returns, we need to
+    // detect stalled playback and reload the source to re-initialize audio.
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+            wasPlayingBeforeHidden = !videoEl.paused && !videoEl.ended;
+        } else if (document.visibilityState === 'visible') {
+            handleVisibilityRestore();
+        }
+    });
+
+    // Handle Safari back-forward cache restoration
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            handleVisibilityRestore();
+        }
+    });
+
+    function handleVisibilityRestore() {
+        if (!currentQuality) return;
+        if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
+
+        setTimeout(function() {
+            if (videoEl.paused && wasPlayingBeforeHidden) {
+                // Video was paused while in background, try to resume
+                var playPromise = videoEl.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(function() {
+                        // Autoplay blocked after background - try muted
+                        if (!videoEl.muted) {
+                            videoEl.muted = true;
+                            unmuteBtn.classList.remove('hidden');
+                            videoEl.play().catch(function() {});
+                        }
+                    });
+                }
+            }
+
+            // On iOS/Safari, after returning from background the audio pipeline
+            // or stream connection can be dead even if video appears to play.
+            // Check if the stream is actually progressing.
+            if ((isIOS() || isSafari()) && wasPlayingBeforeHidden) {
+                var checkTime = videoEl.currentTime;
+                setTimeout(function() {
+                    // If time hasn't advanced in 3 seconds, the stream is stale
+                    // and likely has no audio. Reload the source to fix it.
+                    if (Math.abs(videoEl.currentTime - checkTime) < 0.5 && !videoEl.paused) {
+                        console.log('Stream stalled after returning from background, reloading...');
+                        reloadCurrentStream();
+                    } else if (videoEl.paused && wasPlayingBeforeHidden) {
+                        // Video didn't resume - reload source entirely
+                        console.log('Video did not resume after background, reloading...');
+                        reloadCurrentStream();
+                    }
+                }, 3000);
+            }
+        }, 500);
+    }
+
+    function reloadCurrentStream() {
+        if (!currentQuality) return;
+
+        if (useNativeHls) {
+            if (currentNativeCleanup) {
+                currentNativeCleanup();
+                currentNativeCleanup = null;
+            }
+            nativeRetryCount = 0;
+            nativeHasPlayed = false;
+            isQualitySwitching = false;
+
+            // Reload the video source entirely to re-initialize
+            // the audio/video pipeline after background restore
+            startNativeStreamDirect(currentQuality);
+        } else if (hlsPlayer) {
+            hlsPlayer.loadSource(getHlsUrl(currentQuality));
+        }
+    }
 
     init();
 })();

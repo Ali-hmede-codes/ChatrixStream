@@ -106,6 +106,15 @@ module.exports = function(db, hlsConverter) {
         const quality = getQualityByChannelAndLabel.get(channel.id, req.params.quality);
         if (!quality) return res.status(404).json({ ready: false });
 
+        // Ensure FFmpeg is running for this quality so that manifest
+        // polling can detect when it becomes ready. Without this,
+        // polling always returns false if FFmpeg was never started
+        // (e.g. after a quality switch where the initial manifest
+        // request failed before triggering ensureConversion).
+        if (hlsConverter.isAvailable()) {
+            hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url);
+        }
+
         const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label);
         res.json({ ready });
     });
