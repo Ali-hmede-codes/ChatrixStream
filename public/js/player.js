@@ -10,8 +10,8 @@
     let maxReconnectBackoff = 30000;
     let sseConnection = null;
     let useNativeHls = false;
-    let emptyPlaylistRetries = 0;
-    let maxEmptyPlaylistRetries = 10;
+    let nativeRetryCount = 0;
+    let maxNativeRetries = 30;
 
     const videoEl = document.getElementById('video-player');
     const errorOverlay = document.getElementById('error-overlay');
@@ -120,7 +120,7 @@
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
         }
-        emptyPlaylistRetries = 0;
+        nativeRetryCount = 0;
         reconnectBackoff = 3000;
 
         if (hlsPlayer) {
@@ -188,6 +188,12 @@
                 backBufferLength: 90,
                 progressive: true,
                 lowLatencyMaxDrift: 0,
+                manifestLoadingRetryDelay: 2000,
+                manifestLoadingMaxRetry: 10,
+                manifestLoadingMaxRetryTimeout: 60000,
+                levelLoadingRetryDelay: 2000,
+                levelLoadingMaxRetry: 10,
+                levelLoadingMaxRetryTimeout: 60000,
                 xhrSetup: function(xhr, url) {
                     xhr.setRequestHeader('x-session-token', sessionData.session_token);
                 }
@@ -204,28 +210,14 @@
             hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
                 console.error('HLS error:', data.type, data.details, data);
 
-                if (data.details === 'levelEmptyError') {
-                    emptyPlaylistRetries++;
-                    if (emptyPlaylistRetries <= maxEmptyPlaylistRetries) {
-                        console.warn('Empty playlist (stream starting), retry ' + emptyPlaylistRetries + '/' + maxEmptyPlaylistRetries);
-                        return;
-                    }
-                    if (data.fatal) {
-                        console.warn('Stream still empty after max retries, reconnecting with backoff...');
-                        scheduleReconnect();
-                    }
-                    return;
-                }
-
-                if (data.details === 'manifestLoadError' && data.response && data.response.code === 429) {
-                    console.warn('Rate limited (429), reconnecting with backoff...');
-                    scheduleReconnect();
-                    return;
-                }
-
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
+                            if (data.details === 'manifestLoadError' && data.response && data.response.code === 503) {
+                                console.warn('Stream not ready (503), will auto-retry...');
+                                hlsPlayer.startLoad(2000);
+                                return;
+                            }
                             console.warn('Fatal network error, reconnecting with backoff...');
                             scheduleReconnect();
                             break;
@@ -255,68 +247,109 @@
 
         } else if (canPlayHlsNatively()) {
             useNativeHls = true;
-
-            videoEl.muted = true;
-            var hlsUrl = getHlsUrl(quality);
-
-            fetch(hlsUrl, { headers: { 'x-session-token': sessionData.session_token } }).then(function(resp) {
-                if (resp.status === 503) {
-                    showError('Server Error', 'ffmpeg is not installed on the server. HLS stream conversion is unavailable. Please contact the server administrator.');
-                    return;
-                }
-                if (!resp.ok) {
-                    showError('Stream Error', 'Failed to load the HLS stream (HTTP ' + resp.status + ').');
-                    return;
-                }
-                videoEl.src = hlsUrl;
-                videoEl.play();
-
-                videoEl.addEventListener('loadeddata', function onLoaded() {
-                    hideLoading();
-                    if (videoEl.muted) {
-                        unmuteBtn.classList.remove('hidden');
-                    }
-                    videoEl.removeEventListener('loadeddata', onLoaded);
-                });
-
-                videoEl.addEventListener('error', function onError() {
-                    showError('Stream Error', 'Failed to load the stream. The server may need ffmpeg installed for HLS conversion.');
-                    videoEl.removeEventListener('error', onError);
-                });
-
-                videoEl.addEventListener('waiting', function() {
-                    showLoading('Buffering...');
-                });
-
-                videoEl.addEventListener('playing', function onPlaying() {
-                    hideLoading();
-                    videoEl.removeEventListener('playing', onPlaying);
-                });
-            }).catch(function(err) {
-                showError('Network Error', 'Could not reach the server for HLS stream: ' + err.message);
-            });
+            nativeRetryCount = 0;
+            startNativeStream(quality);
 
         } else {
             showError('Unsupported', 'Your browser does not support HLS playback.');
         }
     }
 
+    function startNativeStream(quality) {
+        var hlsUrl = getHlsUrl(quality);
+
+        videoEl.muted = true;
+        showLoading('Loading ' + quality.toUpperCase() + ' stream...');
+
+        fetch(hlsUrl, { headers: { 'x-session-token': sessionData.session_token } }).then(function(resp) {
+            if (resp.status === 503) {
+                return resp.json().then(function(body) {
+                    if (body.error === 'ffmpeg_not_available') {
+                        showError('Server Error', 'ffmpeg is not installed on the server. HLS stream conversion is unavailable. Please contact the server administrator.');
+                        return;
+                    }
+                    throw { streamNotReady: true };
+                }).catch(function(err) {
+                    if (err && err.streamNotReady) {
+                        nativeRetryCount++;
+                        if (nativeRetryCount <= maxNativeRetries) {
+                            console.warn('Stream not ready (503), retrying... (' + nativeRetryCount + '/' + maxNativeRetries + ')');
+                            var delay = Math.min(2000 * nativeRetryCount, 30000);
+                            reconnectTimer = setTimeout(function() {
+                                reconnectTimer = null;
+                                startNativeStream(quality);
+                            }, delay);
+                            return;
+                        }
+                        showError('Stream Error', 'The stream failed to start after multiple attempts. Please try again later.');
+                        return;
+                    }
+                    showError('Stream Error', 'Failed to load the HLS stream (HTTP 503).');
+                    return;
+                });
+            }
+            if (!resp.ok) {
+                showError('Stream Error', 'Failed to load the HLS stream (HTTP ' + resp.status + ').');
+                return;
+            }
+
+            nativeRetryCount = 0;
+            videoEl.src = hlsUrl;
+            videoEl.play();
+
+            videoEl.addEventListener('loadeddata', function onLoaded() {
+                hideLoading();
+                if (videoEl.muted) {
+                    unmuteBtn.classList.remove('hidden');
+                }
+                videoEl.removeEventListener('loadeddata', onLoaded);
+            });
+
+            videoEl.addEventListener('error', function onError() {
+                nativeRetryCount++;
+                if (nativeRetryCount <= maxNativeRetries) {
+                    console.warn('Native HLS error, retrying... (' + nativeRetryCount + '/' + maxNativeRetries + ')');
+                    var delay = Math.min(2000 * nativeRetryCount, 30000);
+                    reconnectTimer = setTimeout(function() {
+                        reconnectTimer = null;
+                        videoEl.removeAttribute('src');
+                        videoEl.load();
+                        startNativeStream(quality);
+                    }, delay);
+                } else {
+                    showError('Stream Error', 'Failed to load the stream. The server may need ffmpeg installed for HLS conversion.');
+                }
+                videoEl.removeEventListener('error', onError);
+            });
+
+            videoEl.addEventListener('waiting', function() {
+                showLoading('Buffering...');
+            });
+
+            videoEl.addEventListener('playing', function onPlaying() {
+                hideLoading();
+                if (videoEl.muted) {
+                    unmuteBtn.classList.remove('hidden');
+                }
+                videoEl.removeEventListener('playing', onPlaying);
+            });
+        }).catch(function(err) {
+            if (err && err.streamNotReady) return;
+            showError('Network Error', 'Could not reach the server for HLS stream: ' + err.message);
+        });
+    }
+
     function scheduleReconnect() {
         if (reconnectTimer) return;
 
         destroyPlayer();
+        showLoading('Reconnecting...');
         reconnectTimer = setTimeout(function() {
             reconnectTimer = null;
-            reconnectStream();
+            startStream(currentQuality);
         }, reconnectBackoff);
 
         reconnectBackoff = Math.min(reconnectBackoff * 1.5, maxReconnectBackoff);
-    }
-
-    function reconnectStream() {
-        reconnectBackoff = 3000;
-        emptyPlaylistRetries = 0;
-        startStream(currentQuality);
     }
 
     function showLoading(text) {

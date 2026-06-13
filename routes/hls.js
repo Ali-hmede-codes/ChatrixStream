@@ -55,15 +55,19 @@ module.exports = function(db, hlsConverter) {
 
         if (!hlsConverter.isAvailable()) {
             res.writeHead(503, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: 'ffmpeg not available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
+            return res.end(JSON.stringify({ error: 'ffmpeg_not_available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
         }
 
         hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url);
 
         const manifest = hlsConverter.getManifest(validation.channel.id, validation.quality.quality_label);
         if (!manifest) {
-            res.writeHead(503, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-            return res.end('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n');
+            res.writeHead(503, {
+                'Content-Type': 'application/vnd.apple.mpegurl',
+                'Retry-After': '2',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end('#EXTM3U\n#EXT-X-VERSION:3\n');
         }
 
         const rewritten = hlsConverter.rewriteManifest(manifest, validation.sessionToken);

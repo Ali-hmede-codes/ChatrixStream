@@ -240,13 +240,17 @@ class HlsConverter {
 
         const manifestPath = path.join(state.dir, 'index.m3u8');
         if (!fs.existsSync(manifestPath)) {
-            return '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:' + this.segmentDuration + '\n#EXT-X-MEDIA-SEQUENCE:0\n';
+            return null;
         }
 
         try {
-            return fs.readFileSync(manifestPath, 'utf8');
+            const content = fs.readFileSync(manifestPath, 'utf8');
+            if (!content.includes('.ts')) {
+                return null;
+            }
+            return content;
         } catch (e) {
-            return '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:' + this.segmentDuration + '\n#EXT-X-MEDIA-SEQUENCE:0\n';
+            return null;
         }
     }
 
