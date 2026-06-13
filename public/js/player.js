@@ -4,7 +4,7 @@
     let sessionData = null;
     let channelInfo = null;
     let currentQuality = null;
-    let mpegtsPlayer = null;
+    let hlsPlayer = null;
     let reconnectTimer = null;
     let sseConnection = null;
     let useNativeHls = false;
@@ -102,12 +102,19 @@
     function switchQuality(newQuality) {
         if (newQuality === currentQuality) return;
 
-        if (mpegtsPlayer) {
-            mpegtsPlayer.pause();
-            mpegtsPlayer.unload();
-            mpegtsPlayer.detachMediaElement();
-            mpegtsPlayer.destroy();
-            mpegtsPlayer = null;
+        destroyPlayer();
+
+        document.querySelectorAll('.quality-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.quality === newQuality);
+        });
+
+        startStream(newQuality);
+    }
+
+    function destroyPlayer() {
+        if (hlsPlayer) {
+            hlsPlayer.destroy();
+            hlsPlayer = null;
         }
 
         if (useNativeHls) {
@@ -115,11 +122,7 @@
             videoEl.load();
         }
 
-        document.querySelectorAll('.quality-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.quality === newQuality);
-        });
-
-        startStream(newQuality);
+        videoEl.pause();
     }
 
     function tryUnmute() {
@@ -148,52 +151,70 @@
         }
     });
 
+    function getHlsUrl(quality) {
+        return window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
+    }
+
     function startStream(quality) {
         currentQuality = quality;
-
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
-        if (mpegts.isSupported()) {
+        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
             useNativeHls = false;
 
-            var streamUrl = window.location.origin + '/channel/' + channelInfo.channel_token + '/' + quality + '?session=' + sessionData.session_token;
+            var hlsUrl = getHlsUrl(quality);
 
-            mpegtsPlayer = mpegts.createPlayer({
-                type: 'mpegts',
-                url: streamUrl,
-                isLive: true
-            }, {
+            hlsPlayer = new Hls({
+                liveSyncDurationCount: 3,
+                liveMaxLatencyDurationCount: 6,
+                liveDurationInfinity: true,
+                maxBufferLength: 30,
+                maxMaxBufferLength: 60,
+                maxBufferSize: 60 * 1000 * 1000,
+                maxBufferHole: 0.5,
+                lowLatencyMode: true,
                 enableWorker: true,
-                enableStashBuffer: true,
-                stashInitialSize: 1024 * 384,
-                lazyLoad: true,
-                lazyLoadMaxDuration: 3 * 60,
-                lazyLoadRecoverDuration: 30,
-                autoCleanupSourceBuffer: true,
-                autoCleanupMaxBackwardDuration: 3 * 60,
-                autoCleanupMinBackwardDuration: 2 * 60,
-                liveBufferLatencyChasing: true,
-                liveBufferLatencyChasingOnPaused: true,
-                liveSyncMaxLatency: 12,
-                liveMaxLatencyDuration: 30
+                backBufferLength: 90,
+                progressive: true,
+                lowLatencyMaxDrift: 0,
+                xhrSetup: function(xhr, url) {
+                    xhr.setRequestHeader('x-session-token', sessionData.session_token);
+                }
             });
 
             videoEl.muted = true;
-            mpegtsPlayer.attachMediaElement(videoEl);
-            mpegtsPlayer.load();
-            mpegtsPlayer.play();
+            hlsPlayer.loadSource(hlsUrl);
+            hlsPlayer.attachMedia(videoEl);
 
-            mpegtsPlayer.on(mpegts.Events.ERROR, function(errorType, errorDetail, errorInfo) {
-                console.error('mpegts error:', errorType, errorDetail, errorInfo);
-                if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
-                    if (!reconnectTimer) {
-                        reconnectTimer = setTimeout(function() {
-                            reconnectTimer = null;
-                            reconnectStream();
-                        }, 5000);
+            hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+                videoEl.play().catch(function() {});
+            });
+
+            hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
+                console.error('HLS error:', data.type, data.details, data);
+
+                if (data.fatal) {
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.warn('Fatal network error, attempting recovery...');
+                            hlsPlayer.startLoad();
+                            if (!reconnectTimer) {
+                                reconnectTimer = setTimeout(function() {
+                                    reconnectTimer = null;
+                                    reconnectStream();
+                                }, 10000);
+                            }
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.warn('Fatal media error, attempting recovery...');
+                            hlsPlayer.recoverMediaError();
+                            break;
+                        default:
+                            console.error('Fatal error, cannot recover');
+                            destroyPlayer();
+                            showError('Stream Error', 'An unrecoverable error occurred. Please try again.');
+                            break;
                     }
-                } else if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
-                    console.warn('Media error, attempting recovery...');
                 }
             });
 
@@ -204,11 +225,15 @@
                 }
             }, { once: false });
 
+            videoEl.addEventListener('waiting', function() {
+                showLoading('Buffering...');
+            });
+
         } else if (canPlayHlsNatively()) {
             useNativeHls = true;
 
             videoEl.muted = true;
-            var hlsUrl = window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
+            var hlsUrl = getHlsUrl(quality);
 
             fetch(hlsUrl, { headers: { 'x-session-token': sessionData.session_token } }).then(function(resp) {
                 if (resp.status === 503) {
@@ -248,24 +273,12 @@
             });
 
         } else {
-            showError('Unsupported', 'Your browser does not support MPEG-TS or HLS playback.');
+            showError('Unsupported', 'Your browser does not support HLS playback.');
         }
     }
 
     function reconnectStream() {
-        if (mpegtsPlayer) {
-            mpegtsPlayer.pause();
-            mpegtsPlayer.unload();
-            mpegtsPlayer.detachMediaElement();
-            mpegtsPlayer.destroy();
-            mpegtsPlayer = null;
-        }
-
-        if (useNativeHls) {
-            videoEl.removeAttribute('src');
-            videoEl.load();
-        }
-
+        destroyPlayer();
         startStream(currentQuality);
     }
 
@@ -305,17 +318,7 @@
         sseConnection.addEventListener('session_expired', function(e) {
             var data = JSON.parse(e.data);
             localStorage.removeItem(SESSION_KEY);
-            if (mpegtsPlayer) {
-                mpegtsPlayer.pause();
-                mpegtsPlayer.unload();
-                mpegtsPlayer.detachMediaElement();
-                mpegtsPlayer.destroy();
-                mpegtsPlayer = null;
-            }
-            if (useNativeHls) {
-                videoEl.removeAttribute('src');
-                videoEl.load();
-            }
+            destroyPlayer();
             showError('Session Expired', data.error || 'Your access has expired. Please enter a new invite code.');
             errorBtn.onclick = function() {
                 window.location.href = '/';
@@ -344,15 +347,23 @@
     }
 
     function toggleFullscreen() {
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-        } else {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        } else if (videoEl.webkitEnterFullscreen) {
+            videoEl.webkitEnterFullscreen();
+        } else if (videoContainer.requestFullscreen) {
             videoContainer.requestFullscreen();
+        } else if (videoContainer.webkitRequestFullscreen) {
+            videoContainer.webkitRequestFullscreen();
         }
     }
 
     function updateFullscreenIcon() {
-        if (document.fullscreenElement) {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
             fullscreenBtn.innerHTML = '&#x2716;';
             fullscreenBtn.title = 'Exit Fullscreen';
         } else {
@@ -363,6 +374,7 @@
 
     fullscreenBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', updateFullscreenIcon);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 
     videoContainer.addEventListener('dblclick', toggleFullscreen);
 
