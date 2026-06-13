@@ -58,16 +58,14 @@ app.use((req, res, next) => {
     next();
 });
 
-const redeemLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: parseInt(process.env.RATE_LIMIT_MAX) || 10 });
-const streamLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: parseInt(process.env.RATE_LIMIT_STREAM_MAX) || 120 });
 const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
 app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter));
-app.use('/api/auth', redeemLimiter, authRoutes(db));
+app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
-app.use('/channel', streamLimiter, streamRoutes(db, streamManager));
-app.use('/hls', streamLimiter, hlsRoutes(db, hlsConverter));
+app.use('/channel', streamRoutes(db, streamManager));
+app.use('/hls', hlsRoutes(db, hlsConverter));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
