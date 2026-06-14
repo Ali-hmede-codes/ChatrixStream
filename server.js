@@ -53,7 +53,7 @@ app.use(cors({
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' blob: https://cdn.jsdelivr.net http: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; media-src 'self' blob: http: https:; img-src 'self' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' blob: https://cdn.jsdelivr.net http: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; media-src 'self' blob: http: https:; img-src 'self' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net");
     res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     next();
 });
@@ -68,6 +68,10 @@ app.use('/channel', streamRoutes(db, streamManager));
 app.use('/hls', hlsRoutes(db, hlsConverter));
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/favicon.ico', (req, res) => {
+    res.redirect(301, '/favicon.svg');
+});
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
