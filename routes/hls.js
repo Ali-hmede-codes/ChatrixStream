@@ -2,8 +2,59 @@ const express = require('express');
 const fs = require('fs');
 const { validateSession } = require('../services/codeGenerator');
 
+const SESSION_CACHE_TTL = 30000;
+const sessionCache = new Map();
+
+function getCachedSession(db, sessionToken) {
+    const now = Date.now();
+    const cached = sessionCache.get(sessionToken);
+    if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
+        return cached.result;
+    }
+    const result = validateSession(db, sessionToken);
+    sessionCache.set(sessionToken, { result, timestamp: now });
+    if (sessionCache.size > 500) {
+        const oldestKey = null;
+        for (const [key, val] of sessionCache) {
+            if (now - val.timestamp > SESSION_CACHE_TTL) {
+                sessionCache.delete(key);
+            }
+        }
+    }
+    return result;
+}
+
 module.exports = function(db, hlsConverter) {
     const router = express.Router();
+
+    const channelCache = new Map();
+    const CHANNEL_CACHE_TTL = 60000;
+
+    function getCachedChannel(token) {
+        const now = Date.now();
+        const cached = channelCache.get(token);
+        if (cached && now - cached.timestamp < CHANNEL_CACHE_TTL) {
+            return cached.result;
+        }
+        const result = getChannelByToken.get(token);
+        channelCache.set(token, { result, timestamp: now });
+        return result;
+    }
+
+    const qualityCache = new Map();
+    const QUALITY_CACHE_TTL = 60000;
+
+    function getCachedQuality(channelId, qualityLabel) {
+        const key = channelId + ':' + qualityLabel;
+        const now = Date.now();
+        const cached = qualityCache.get(key);
+        if (cached && now - cached.timestamp < QUALITY_CACHE_TTL) {
+            return cached.result;
+        }
+        const result = getQualityByChannelAndLabel.get(channelId, qualityLabel);
+        qualityCache.set(key, { result, timestamp: now });
+        return result;
+    }
 
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
     const getQualityByChannelAndLabel = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? AND quality_label = ?');
@@ -45,19 +96,23 @@ module.exports = function(db, hlsConverter) {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return { valid: false, error: 'No session token' };
 
-        const session = validateSession(db, sessionToken);
+        const session = getCachedSession(db, sessionToken);
         if (!session.valid) return { valid: false, error: session.error };
 
-        const channel = getChannelByToken.get(req.params.channelToken);
+        const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return { valid: false, error: 'Channel not found' };
 
-        if (session.channel_id !== channel.id) return { valid: false, error: 'Session not valid for this channel' };
+        if (session.channel_id !== channel.id) {
+            sessionCache.delete(sessionToken);
+            return { valid: false, error: 'Session not valid for this channel' };
+        }
 
         if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
+            channelCache.delete(req.params.channelToken);
             return { valid: false, error: 'Channel link expired' };
         }
 
-        const quality = getQualityByChannelAndLabel.get(channel.id, req.params.quality);
+        const quality = getCachedQuality(channel.id, req.params.quality);
         if (!quality) return { valid: false, error: 'Quality not found' };
 
         return { valid: true, sessionToken, channel, quality };
@@ -67,15 +122,19 @@ module.exports = function(db, hlsConverter) {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return res.status(403).json({ error: 'No session token', expired: true });
 
-        const session = validateSession(db, sessionToken);
+        const session = getCachedSession(db, sessionToken);
         if (!session.valid) return res.status(403).json({ error: session.error, expired: true });
 
-        const channel = getChannelByToken.get(req.params.channelToken);
+        const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
-        if (session.channel_id !== channel.id) return res.status(403).json({ error: 'Session not valid for this channel', expired: true });
+        if (session.channel_id !== channel.id) {
+            sessionCache.delete(sessionToken);
+            return res.status(403).json({ error: 'Session not valid for this channel', expired: true });
+        }
 
         if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
+            channelCache.delete(req.params.channelToken);
             return res.status(403).json({ error: 'Channel link expired', expired: true });
         }
 
@@ -95,18 +154,22 @@ module.exports = function(db, hlsConverter) {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return res.status(403).json({ ready: false, expired: true });
 
-        const session = validateSession(db, sessionToken);
+        const session = getCachedSession(db, sessionToken);
         if (!session.valid) return res.status(403).json({ ready: false, expired: true, error: session.error });
 
-        const channel = getChannelByToken.get(req.params.channelToken);
+        const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return res.status(404).json({ ready: false });
 
-        if (session.channel_id !== channel.id) return res.status(403).json({ ready: false, expired: true });
+        if (session.channel_id !== channel.id) {
+            sessionCache.delete(sessionToken);
+            return res.status(403).json({ ready: false, expired: true });
+        }
 
-        const quality = getQualityByChannelAndLabel.get(channel.id, req.params.quality);
+        const quality = getCachedQuality(channel.id, req.params.quality);
         if (!quality) return res.status(404).json({ ready: false });
 
         if (channel.link_expires_at && new Date(channel.link_expires_at) < new Date()) {
+            channelCache.delete(req.params.channelToken);
             return res.status(403).json({ ready: false, expired: true, error: 'Channel link expired' });
         }
 
@@ -180,7 +243,9 @@ module.exports = function(db, hlsConverter) {
         res.writeHead(200, {
             'Content-Type': 'video/mp2t',
             'Cache-Control': 'max-age=30, public, no-transform',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
         });
 
         const fileStream = fs.createReadStream(segmentPath);

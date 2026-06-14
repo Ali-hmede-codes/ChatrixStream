@@ -22,7 +22,45 @@
     let lastPlayingTime = null;
     let autoDowngradeDisabled = false;
     let BUFFERING_DEBOUNCE_MS = 1500;
-    let BUFFERING_THRESHOLD_MS = 8000;
+    let BUFFERING_THRESHOLD_MS = 15000;
+    let stallCount = 0;
+    let lastStallTime = null;
+    let bandwidthUpdateInterval = null;
+
+    function trackBandwidth() {
+        if (bandwidthUpdateInterval) clearInterval(bandwidthUpdateInterval);
+        bandwidthUpdateInterval = setInterval(function() {
+            if (!vjsPlayer) return;
+            var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
+            if (tech && tech.vhs && tech.vhs.bandwidth) {
+                bandwidthEstimate = tech.vhs.bandwidth;
+                adaptToNetworkConditions();
+            }
+        }, 5000);
+    }
+
+    function adaptToNetworkConditions() {
+        if (!vjsPlayer) return;
+        var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
+        if (!tech || !tech.vhs) return;
+
+        if (isVeryLowBandwidth()) {
+            tech.vhs.options_.liveSyncDurationCount = 10;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 30;
+            tech.vhs.options_.maxBufferLength = 60;
+            tech.vhs.options_.maxMaxBufferLength = 120;
+        } else if (isLowBandwidth()) {
+            tech.vhs.options_.liveSyncDurationCount = 8;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 20;
+            tech.vhs.options_.maxBufferLength = 45;
+            tech.vhs.options_.maxMaxBufferLength = 90;
+        } else {
+            tech.vhs.options_.liveSyncDurationCount = 5;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 15;
+            tech.vhs.options_.maxBufferLength = 45;
+            tech.vhs.options_.maxMaxBufferLength = 120;
+        }
+    }
 
     function isLowBandwidth() {
         if (bandwidthEstimate !== null) return bandwidthEstimate < 800000;
@@ -69,24 +107,27 @@
         };
 
         if (isVeryLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 6;
-            baseConfig.liveMaxLatencyDurationCount = 15;
-            baseConfig.maxBufferLength = 30;
-            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.liveSyncDurationCount = 10;
+            baseConfig.liveMaxLatencyDurationCount = 30;
+            baseConfig.maxBufferLength = 60;
+            baseConfig.maxMaxBufferLength = 120;
+            baseConfig.highBufferLength = 60;
             baseConfig.maxBufferSize = 5 * 1000 * 1000;
             baseConfig.backBufferLength = 30;
         } else if (isLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 5;
-            baseConfig.liveMaxLatencyDurationCount = 12;
-            baseConfig.maxBufferLength = 30;
-            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.liveSyncDurationCount = 8;
+            baseConfig.liveMaxLatencyDurationCount = 20;
+            baseConfig.maxBufferLength = 45;
+            baseConfig.maxMaxBufferLength = 90;
+            baseConfig.highBufferLength = 45;
             baseConfig.maxBufferSize = 10 * 1000 * 1000;
             baseConfig.backBufferLength = 60;
         } else {
-            baseConfig.liveSyncDurationCount = 3;
-            baseConfig.liveMaxLatencyDurationCount = 9;
-            baseConfig.maxBufferLength = 30;
-            baseConfig.maxMaxBufferLength = 90;
+            baseConfig.liveSyncDurationCount = 5;
+            baseConfig.liveMaxLatencyDurationCount = 15;
+            baseConfig.maxBufferLength = 45;
+            baseConfig.maxMaxBufferLength = 120;
+            baseConfig.highBufferLength = 45;
             baseConfig.maxBufferSize = 60 * 1000 * 1000;
             baseConfig.backBufferLength = 90;
         }
@@ -238,7 +279,7 @@
             console.warn('Auto-downgrading from ' + currentQuality + ' to ' + lowerQuality + ' due to buffering');
             autoDowngradeDisabled = true;
             switchQuality(lowerQuality);
-            setTimeout(function() { autoDowngradeDisabled = false; }, 30000);
+            setTimeout(function() { autoDowngradeDisabled = false; }, 60000);
         }
     }
 
@@ -263,10 +304,13 @@
             cancelBufferingDebounce();
             hideLoading();
             consecutiveNetworkErrors = 0;
+            stallCount = 0;
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
             if (tech && tech.vhs && tech.vhs.bandwidth) {
                 bandwidthEstimate = tech.vhs.bandwidth;
+                adaptToNetworkConditions();
             }
+            trackBandwidth();
             if (vjsPlayer.muted()) {
                 unmuteBtn.classList.remove('hidden');
             } else {
@@ -278,7 +322,7 @@
                 bufferingStartTime = null;
                 if (lastPlayingTime) {
                     var playDuration = Date.now() - lastPlayingTime;
-                    if (playDuration < BUFFERING_THRESHOLD_MS && bufferingDuration > 2000 && !autoDowngradeDisabled) {
+                    if (playDuration < BUFFERING_THRESHOLD_MS && bufferingDuration > 4000 && !autoDowngradeDisabled) {
                         tryAutoDowngrade();
                     }
                 }
@@ -288,6 +332,8 @@
 
         vjsPlayer.on('waiting', function() {
             if (!bufferingStartTime) bufferingStartTime = Date.now();
+            stallCount++;
+            lastStallTime = Date.now();
             scheduleBufferingDebounce();
         });
 
@@ -339,7 +385,12 @@
 
         vjsPlayer.on('stalled', function() {
             if (!bufferingStartTime) bufferingStartTime = Date.now();
+            stallCount++;
+            lastStallTime = Date.now();
             scheduleBufferingDebounce();
+            if (stallCount > 5 && !autoDowngradeDisabled) {
+                tryAutoDowngrade();
+            }
         });
 
         vjsPlayer.on('ended', function() {

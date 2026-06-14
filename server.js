@@ -41,6 +41,17 @@ const app = express();
 
 app.use(express.json());
 
+const compression = require('compression');
+app.use(compression({
+    filter: (req, res) => {
+        if (req.headers['x-no-compression']) return false;
+        const type = res.getHeader('Content-Type');
+        if (type && (type.includes('mpegurl') || type.includes('text/') || type.includes('json'))) return true;
+        return false;
+    },
+    threshold: 256
+}));
+
 const allowedOrigins = (process.env.CORS_ORIGINS || 'https://stream.chatrix.vip,http://localhost:3000').split(',');
 app.use(cors({
     origin: (origin, callback) => {
