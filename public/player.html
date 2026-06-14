@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ChatrixStream — Player</title>
     <link rel="stylesheet" href="/css/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/video.js@8/dist/video-js.min.css" rel="stylesheet">
 </head>
 <body>
     <div id="player-app">
@@ -29,7 +30,7 @@
         </div>
 
         <div id="video-container">
-            <video id="video-player" autoplay muted playsinline></video>
+            <video id="video-player" class="video-js vjs-default-skin" autoplay muted playsinline></video>
             <button id="unmute-btn" class="hidden" title="Unmute">&#x1F50A;</button>
 
             <div id="quality-bar">
@@ -44,7 +45,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/video.js@8/dist/video.min.js"></script>
     <script src="/js/player.js"></script>
 </body>
 </html>

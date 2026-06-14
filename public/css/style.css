@@ -127,6 +127,23 @@ body {
     background: #000;
 }
 
+#video-player .vjs-big-play-button,
+#video-player .vjs-control-bar,
+#video-player .vjs-loading-spinner,
+#video-player .vjs-text-track-display {
+    display: none !important;
+}
+
+.video-js {
+    width: 100% !important;
+    height: 100% !important;
+    background: #000 !important;
+}
+
+.video-js .vjs-tech {
+    object-fit: contain !important;
+}
+
 #quality-bar {
     position: absolute;
     bottom: 60px;
