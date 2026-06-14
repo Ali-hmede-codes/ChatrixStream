@@ -239,17 +239,24 @@
 
         prewarmAllQualities();
 
+        var qualities = channelInfo.qualities || [];
+        var sorted = qualities.sort(function(a, b) { return a.sort_order - b.sort_order; });
         var defaultQuality;
         if (isVeryLowBandwidth()) {
-            var lowQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
-            defaultQuality = lowQ || getLowestQuality();
+            var lowQ = qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
+            defaultQuality = lowQ || sorted[0];
         } else if (isLowBandwidth()) {
-            var medQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('medium'); });
-            defaultQuality = medQ || channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
-            defaultQuality = defaultQuality || getLowestQuality();
+            var medQ = qualities.find(function(q) { return q.label.toLowerCase().includes('medium'); });
+            var lowQ2 = qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
+            defaultQuality = medQ || lowQ2 || sorted[0];
         } else {
-            var highQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('high'); });
-            defaultQuality = highQ || channelInfo.qualities.sort(function(a, b) { return b.sort_order - a.sort_order; })[0];
+            var highQ = qualities.find(function(q) { return q.label.toLowerCase().includes('high'); });
+            defaultQuality = highQ || sorted[0];
+        }
+
+        if (!defaultQuality) {
+            redirectToLanding('No stream qualities available');
+            return;
         }
         startStream(defaultQuality.label);
     }
@@ -445,8 +452,10 @@
     }
 
     function buildQualityButtons(qualities) {
+        if (!qualities || qualities.length === 0) return;
         const sorted = qualities.sort((a, b) => a.sort_order - b.sort_order);
         sorted.forEach(q => {
+            if (!q.label) return;
             const btn = document.createElement('button');
             var btnText = q.label.toUpperCase();
             if (q.bitrate_info && q.bitrate_info.approxBitrate) {
@@ -494,6 +503,10 @@
     }
 
     function startStream(quality) {
+        if (!quality) {
+            console.error('startStream called with no quality');
+            return;
+        }
         currentQuality = quality;
         showLoading('Loading ' + quality.toUpperCase() + ' stream...');
 
