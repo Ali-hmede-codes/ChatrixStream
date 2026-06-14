@@ -6,8 +6,8 @@ class StreamManager {
         this.activeStreams = new Map();
         this.highWaterMark = options.highWaterMark || 1048576;
         this.idleTimeout = options.idleTimeout || 30000;
-        this.reconnectDelay = options.reconnectDelay || 3000;
-        this.sourceTimeout = options.sourceTimeout || 10000;
+        this.reconnectDelay = options.reconnectDelay || 2000;
+        this.sourceTimeout = options.sourceTimeout || 15000;
     }
 
     _getKey(channelId, qualityLabel) {
@@ -34,7 +34,8 @@ class StreamManager {
                 'Accept-Encoding': 'identity',
                 'Icy-MetaData': '1',
                 'Connection': 'keep-alive'
-            }
+            },
+            agent: false
         };
 
         if (parsedUrl.username && parsedUrl.password) {
@@ -144,7 +145,8 @@ class StreamManager {
             'Cache-Control': 'no-cache, no-store, no-transform',
             'Connection': 'keep-alive',
             'Transfer-Encoding': 'chunked',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'X-Accel-Buffering': 'no'
         });
 
         state.passThrough.pipe(res, { end: false });

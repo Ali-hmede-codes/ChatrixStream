@@ -19,19 +19,19 @@ const sseRoutes = require('./routes/sse');
 const db = initDB(process.env.DB_PATH);
 seedAdminUsers(db);
 const streamManager = new StreamManager({
-    highWaterMark: parseInt(process.env.STREAM_HIGH_WATER_MARK) || 1048576,
+    highWaterMark: parseInt(process.env.STREAM_HIGH_WATER_MARK) || 2097152,
     idleTimeout: parseInt(process.env.STREAM_IDLE_TIMEOUT_MS) || 30000,
-    reconnectDelay: parseInt(process.env.STREAM_RECONNECT_DELAY_MS) || 3000,
-    sourceTimeout: parseInt(process.env.STREAM_SOURCE_TIMEOUT_MS) || 10000
+    reconnectDelay: parseInt(process.env.STREAM_RECONNECT_DELAY_MS) || 2000,
+    sourceTimeout: parseInt(process.env.STREAM_SOURCE_TIMEOUT_MS) || 15000
 });
 const hlsConverter = new HlsConverter({
     tempDir: process.env.HLS_TEMP_DIR || undefined,
     segmentDuration: parseInt(process.env.HLS_SEGMENT_DURATION) || 2,
-    listSize: parseInt(process.env.HLS_LIST_SIZE) || 6,
+    listSize: parseInt(process.env.HLS_LIST_SIZE) || 10,
     idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
     idleGrace: parseInt(process.env.HLS_IDLE_GRACE_MS) || 5000,
-    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 3000,
-    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 5,
+    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
+    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 10,
     manifestWaitTimeout: parseInt(process.env.HLS_MANIFEST_WAIT_TIMEOUT_MS) || 15000,
     startupTimeout: parseInt(process.env.HLS_STARTUP_TIMEOUT_MS) || 60000,
     ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'

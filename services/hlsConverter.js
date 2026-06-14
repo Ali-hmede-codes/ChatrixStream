@@ -7,7 +7,7 @@ const QUALITY_PRESETS = {
         videoCodec: 'libx264',
         videoBitrate: '400k',
         videoMaxRate: '500k',
-        videoBufSize: '600k',
+        videoBufSize: '800k',
         videoPreset: 'ultrafast',
         videoTune: 'zerolatency',
         videoProfile: 'baseline',
@@ -16,14 +16,14 @@ const QUALITY_PRESETS = {
         audioBitrate: '48k',
         audioChannels: '1',
         audioRate: '44100',
-        segmentDuration: 4,
+        segmentDuration: 2,
         copyVideo: false
     },
     medium: {
         videoCodec: 'libx264',
         videoBitrate: '1000k',
         videoMaxRate: '1200k',
-        videoBufSize: '1400k',
+        videoBufSize: '2000k',
         videoPreset: 'veryfast',
         videoTune: 'zerolatency',
         videoProfile: 'main',
@@ -32,7 +32,7 @@ const QUALITY_PRESETS = {
         audioBitrate: '64k',
         audioChannels: '2',
         audioRate: '48000',
-        segmentDuration: 3,
+        segmentDuration: 2,
         copyVideo: false
     },
     high: {
@@ -276,12 +276,14 @@ class HlsConverter {
         args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
-        args.push('-analyzeduration', '10000000');
+        args.push('-analyzeduration', '5000000');
         args.push('-probesize', '5000000');
-        args.push('-timeout', '10000000');
+        args.push('-timeout', '15000000');
         args.push('-reconnect', '1');
         args.push('-reconnect_streamed', '1');
-        args.push('-reconnect_delay_max', '5');
+        args.push('-reconnect_delay_max', '10');
+        args.push('-reconnect_on_network_error', '1');
+        args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
         args.push('-i', urlWithoutCreds);
@@ -313,7 +315,8 @@ class HlsConverter {
         const segDuration = preset.segmentDuration || this.segmentDuration;
         args.push('-hls_time', String(segDuration));
         args.push('-hls_list_size', String(this.listSize));
-        args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist');
+        args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+split_by_time+independent_segments');
+        args.push('-hls_init_time', '0.8');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');

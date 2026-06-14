@@ -16,11 +16,44 @@
     let sessionExpired = false;
     let wasPlayingBeforeHidden = false;
     let bandwidthEstimate = null;
+    let bufferingDebounceTimer = null;
+    let bufferingStartTime = null;
+    let totalBufferingTime = 0;
+    let lastPlayingTime = null;
+    let autoDowngradeDisabled = false;
+    let BUFFERING_DEBOUNCE_MS = 1500;
+    let BUFFERING_THRESHOLD_MS = 8000;
 
     function isLowBandwidth() {
-        if (bandwidthEstimate !== null) return bandwidthEstimate < 500000;
+        if (bandwidthEstimate !== null) return bandwidthEstimate < 800000;
+        return navigator.connection && navigator.connection.effectiveType &&
+            ['slow-2g', '2g', '3g'].indexOf(navigator.connection.effectiveType) !== -1;
+    }
+
+    function isVeryLowBandwidth() {
+        if (bandwidthEstimate !== null) return bandwidthEstimate < 400000;
         return navigator.connection && navigator.connection.effectiveType &&
             ['slow-2g', '2g'].indexOf(navigator.connection.effectiveType) !== -1;
+    }
+
+    function getAvailableQualities() {
+        if (!channelInfo || !channelInfo.qualities) return [];
+        return channelInfo.qualities.sort(function(a, b) { return a.sort_order - b.sort_order; });
+    }
+
+    function getQualityLower(qualityLabel) {
+        var sorted = getAvailableQualities();
+        for (var i = 0; i < sorted.length; i++) {
+            if (sorted[i].label === qualityLabel && i + 1 < sorted.length) {
+                return sorted[i + 1].label;
+            }
+        }
+        return null;
+    }
+
+    function getLowestQuality() {
+        var sorted = getAvailableQualities();
+        return sorted.length > 0 ? sorted[0].label : null;
     }
 
     function getVhsConfig() {
@@ -30,27 +63,32 @@
             liveSyncOnStall: true,
             usePerformanceCues: true,
             stallEnabled: true,
-            handlePartialData: true
+            handlePartialData: true,
+            experimentalBufferBasedHlsSelector: true,
+            experimentalLeastPixelRatioSelector: true
         };
 
-        if (isLowBandwidth()) {
+        if (isVeryLowBandwidth()) {
+            baseConfig.liveSyncDurationCount = 6;
+            baseConfig.liveMaxLatencyDurationCount = 15;
+            baseConfig.maxBufferLength = 30;
+            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.maxBufferSize = 5 * 1000 * 1000;
+            baseConfig.backBufferLength = 30;
+        } else if (isLowBandwidth()) {
             baseConfig.liveSyncDurationCount = 5;
             baseConfig.liveMaxLatencyDurationCount = 12;
-            baseConfig.maxBufferLength = 15;
-            baseConfig.maxMaxBufferLength = 30;
-            baseConfig.maxBufferSize = 3 * 1000 * 1000;
-            baseConfig.backBufferLength = 30;
-            baseConfig.experimentalBufferBasedHlsSelector = true;
-            baseConfig.experimentalLeastPixelRatioSelector = true;
+            baseConfig.maxBufferLength = 30;
+            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.maxBufferSize = 10 * 1000 * 1000;
+            baseConfig.backBufferLength = 60;
         } else {
             baseConfig.liveSyncDurationCount = 3;
             baseConfig.liveMaxLatencyDurationCount = 9;
             baseConfig.maxBufferLength = 30;
-            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.maxMaxBufferLength = 90;
             baseConfig.maxBufferSize = 60 * 1000 * 1000;
             baseConfig.backBufferLength = 90;
-            baseConfig.experimentalBufferBasedHlsSelector = true;
-            baseConfig.experimentalLeastPixelRatioSelector = true;
         }
 
         return baseConfig;
@@ -161,14 +199,47 @@
         prewarmAllQualities();
 
         var defaultQuality;
-        if (isLowBandwidth()) {
+        if (isVeryLowBandwidth()) {
             var lowQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
-            defaultQuality = lowQ || channelInfo.qualities.sort(function(a, b) { return a.sort_order - b.sort_order; })[0];
+            defaultQuality = lowQ || getLowestQuality();
+        } else if (isLowBandwidth()) {
+            var medQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('medium'); });
+            defaultQuality = medQ || channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
+            defaultQuality = defaultQuality || getLowestQuality();
         } else {
             var highQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('high'); });
             defaultQuality = highQ || channelInfo.qualities.sort(function(a, b) { return b.sort_order - a.sort_order; })[0];
         }
         startStream(defaultQuality.label);
+    }
+
+    function scheduleBufferingDebounce() {
+        if (bufferingDebounceTimer) return;
+        bufferingDebounceTimer = setTimeout(function() {
+            bufferingDebounceTimer = null;
+            if (vjsPlayer && vjsPlayer.paused() && currentQuality && !sessionExpired) {
+                showLoading('Buffering...');
+            }
+        }, BUFFERING_DEBOUNCE_MS);
+    }
+
+    function cancelBufferingDebounce() {
+        if (bufferingDebounceTimer) {
+            clearTimeout(bufferingDebounceTimer);
+            bufferingDebounceTimer = null;
+        }
+    }
+
+    function tryAutoDowngrade() {
+        if (autoDowngradeDisabled) return;
+        if (!currentQuality) return;
+        var lowerQuality = getQualityLower(currentQuality);
+        if (lowerQuality && lowerQuality !== currentQuality) {
+            console.warn('Auto-downgrading from ' + currentQuality + ' to ' + lowerQuality + ' due to buffering');
+            autoDowngradeDisabled = true;
+            switchQuality(lowerQuality);
+            setTimeout(function() { autoDowngradeDisabled = false; }, 30000);
+        }
     }
 
     function initVideoJS() {
@@ -189,6 +260,7 @@
         });
 
         vjsPlayer.on('playing', function() {
+            cancelBufferingDebounce();
             hideLoading();
             consecutiveNetworkErrors = 0;
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
@@ -200,10 +272,23 @@
             } else {
                 unmuteBtn.classList.add('hidden');
             }
+            if (bufferingStartTime) {
+                var bufferingDuration = Date.now() - bufferingStartTime;
+                totalBufferingTime += bufferingDuration;
+                bufferingStartTime = null;
+                if (lastPlayingTime) {
+                    var playDuration = Date.now() - lastPlayingTime;
+                    if (playDuration < BUFFERING_THRESHOLD_MS && bufferingDuration > 2000 && !autoDowngradeDisabled) {
+                        tryAutoDowngrade();
+                    }
+                }
+            }
+            lastPlayingTime = Date.now();
         });
 
         vjsPlayer.on('waiting', function() {
-            showLoading('Buffering...');
+            if (!bufferingStartTime) bufferingStartTime = Date.now();
+            scheduleBufferingDebounce();
         });
 
         vjsPlayer.on('error', function() {
@@ -231,10 +316,14 @@
 
                 if (code === 2) {
                     consecutiveNetworkErrors++;
+                    if (consecutiveNetworkErrors > 3 && !autoDowngradeDisabled) {
+                        tryAutoDowngrade();
+                    }
                     console.warn('Network error, reconnecting... (attempt ' + consecutiveNetworkErrors + ')');
                     scheduleReconnect();
                 } else if (code === 3) {
-                    console.warn('Decode error, doing full source reload...');
+                    console.warn('Decode error, doing soft source reload...');
+                    softResetPlayer();
                     vjsPlayer.reset();
                     startStream(currentQuality);
                 } else if (code === 4) {
@@ -249,7 +338,8 @@
         });
 
         vjsPlayer.on('stalled', function() {
-            showLoading('Buffering...');
+            if (!bufferingStartTime) bufferingStartTime = Date.now();
+            scheduleBufferingDebounce();
         });
 
         vjsPlayer.on('ended', function() {
@@ -399,6 +489,7 @@
     });
 
     function destroyPlayer() {
+        cancelBufferingDebounce();
         if (reconnectTimer) {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
@@ -412,6 +503,14 @@
 
         currentQuality = null;
         consecutiveNetworkErrors = 0;
+        bufferingStartTime = null;
+        totalBufferingTime = 0;
+        lastPlayingTime = null;
+    }
+
+    function softResetPlayer() {
+        cancelBufferingDebounce();
+        bufferingStartTime = null;
     }
 
     function tryUnmute() {
@@ -444,14 +543,15 @@
                 return;
             }
 
-            destroyPlayer();
+            softResetPlayer();
             showLoading('Reconnecting...');
             reconnectTimer = setTimeout(function() {
                 reconnectTimer = null;
+                vjsPlayer.reset();
                 startStream(currentQuality);
             }, reconnectBackoff);
 
-            reconnectBackoff = Math.min(reconnectBackoff * 1.5, maxReconnectBackoff);
+            reconnectBackoff = Math.min(reconnectBackoff * 1.3, maxReconnectBackoff);
         });
     }
 
