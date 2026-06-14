@@ -2,9 +2,10 @@ const express = require('express');
 const { redeemInviteCode, validateSession, createSessionForChannel } = require('../services/codeGenerator');
 
 const QUALITY_PRESETS = {
-    low: { approxBitrate: '~500kbps', description: 'Low (200KB/s WiFi)' },
-    medium: { approxBitrate: '~1200kbps', description: 'Medium (1MB/s WiFi)' },
-    high: { approxBitrate: 'source', description: 'High (unlimited)' }
+    low: { approxBitrate: '~500kbps', description: 'Low (200KB/s WiFi)', videoBitrate: '400k', videoResolution: '480x360', audioBitrate: '48k' },
+    medium: { approxBitrate: '~1200kbps', description: 'Medium (1MB/s WiFi)', videoBitrate: '1000k', videoResolution: null, audioBitrate: '64k' },
+    high: { approxBitrate: 'source', description: 'High (unlimited)', videoBitrate: null, videoResolution: null, audioBitrate: '128k' },
+    copy: { approxBitrate: 'source', description: 'Source (no transcoding)', videoBitrate: null, videoResolution: null, audioBitrate: '128k' }
 };
 
 function resolvePresetInfo(qualityLabel) {
@@ -22,10 +23,34 @@ function resolvePresetInfo(qualityLabel) {
     return QUALITY_PRESETS.high;
 }
 
+function deriveBitrateInfo(qualityRow) {
+    const base = resolvePresetInfo(qualityRow.quality_label);
+    const presetKey = (qualityRow.preset_key || qualityRow.quality_label).toLowerCase().trim();
+    const presetBase = QUALITY_PRESETS[presetKey] || base;
+
+    let approxBitrate = presetBase.approxBitrate;
+    let description = presetBase.description;
+
+    if (qualityRow.video_bitrate) {
+        approxBitrate = '~' + qualityRow.video_bitrate;
+    }
+    if (qualityRow.video_codec === 'copy') {
+        approxBitrate = 'source';
+        description = 'Source (no transcoding)';
+    }
+    if (qualityRow.video_resolution) {
+        description = qualityRow.quality_label.toUpperCase() + ' (' + qualityRow.video_resolution + ')';
+    } else if (qualityRow.video_codec !== 'copy' && qualityRow.video_bitrate) {
+        description = qualityRow.quality_label.toUpperCase() + ' (~' + qualityRow.video_bitrate + ')';
+    }
+
+    return { approxBitrate, description };
+}
+
 module.exports = function(db) {
     const router = express.Router();
 
-    const getQualitiesByChannel = db.prepare('SELECT quality_label as label, sort_order FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
+    const getQualitiesByChannel = db.prepare('SELECT quality_label as label, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
 
     router.post('/redeem', (req, res) => {
@@ -55,7 +80,7 @@ module.exports = function(db) {
         const qualities = getQualitiesByChannel.all(result.channel_id);
         const qualitiesWithInfo = qualities.map(q => ({
             ...q,
-            bitrate_info: resolvePresetInfo(q.label)
+            bitrate_info: deriveBitrateInfo(q)
         }));
         res.json({
             session_token: result.session_token,
@@ -96,7 +121,7 @@ module.exports = function(db) {
         const qualities = getQualitiesByChannel.all(result.channel_id);
         const qualitiesWithInfo = qualities.map(q => ({
             ...q,
-            bitrate_info: resolvePresetInfo(q.label)
+            bitrate_info: deriveBitrateInfo(q)
         }));
         res.json({
             session_token: result.session_token,
@@ -127,7 +152,7 @@ module.exports = function(db) {
         const qualities = getQualitiesByChannel.all(result.channel_id);
         const qualitiesWithInfo = qualities.map(q => ({
             ...q,
-            bitrate_info: resolvePresetInfo(q.label)
+            bitrate_info: deriveBitrateInfo(q)
         }));
         res.json({
             valid: true,

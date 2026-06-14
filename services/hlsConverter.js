@@ -76,19 +76,46 @@ class HlsConverter {
         this._checkFfmpeg();
     }
 
-    _resolvePreset(qualityLabel) {
-        const lower = qualityLabel.toLowerCase().trim();
-        if (this.qualityPresets[lower]) return this.qualityPresets[lower];
-        for (const key of Object.keys(this.qualityPresets)) {
-            if (lower.includes(key)) return this.qualityPresets[key];
+    _resolvePreset(qualityLabel, qualityConfig) {
+        const baseKey = (qualityConfig && qualityConfig.preset_key) || qualityLabel.toLowerCase().trim();
+        if (this.qualityPresets[baseKey]) {
+            const base = this.qualityPresets[baseKey];
+            return this._applyOverrides(base, qualityConfig);
         }
-        const resolutionMatch = lower.match(/(\d+)p/);
+        for (const key of Object.keys(this.qualityPresets)) {
+            if (baseKey.includes(key)) {
+                const base = this.qualityPresets[key];
+                return this._applyOverrides(base, qualityConfig);
+            }
+        }
+        const resolutionMatch = baseKey.match(/(\d+)p/);
         if (resolutionMatch) {
             const height = parseInt(resolutionMatch[1]);
-            if (height <= 360) return this.qualityPresets.low;
-            if (height <= 720) return this.qualityPresets.medium;
+            if (height <= 360) return this._applyOverrides(this.qualityPresets.low, qualityConfig);
+            if (height <= 720) return this._applyOverrides(this.qualityPresets.medium, qualityConfig);
         }
-        return this.qualityPresets.high;
+        return this._applyOverrides(this.qualityPresets.high, qualityConfig);
+    }
+
+    _applyOverrides(basePreset, qualityConfig) {
+        if (!qualityConfig) return basePreset;
+        const result = Object.assign({}, basePreset);
+        if (qualityConfig.video_codec !== null && qualityConfig.video_codec !== undefined) {
+            result.videoCodec = qualityConfig.video_codec;
+            result.copyVideo = qualityConfig.video_codec === 'copy';
+        }
+        if (qualityConfig.video_bitrate != null) result.videoBitrate = qualityConfig.video_bitrate;
+        if (qualityConfig.video_maxrate != null) result.videoMaxRate = qualityConfig.video_maxrate;
+        if (qualityConfig.video_bufsize != null) result.videoBufSize = qualityConfig.video_bufsize;
+        if (qualityConfig.video_preset != null) result.videoPreset = qualityConfig.video_preset;
+        if (qualityConfig.video_profile != null) result.videoProfile = qualityConfig.video_profile;
+        if (qualityConfig.video_level != null) result.videoLevel = qualityConfig.video_level;
+        if (qualityConfig.video_resolution != null) result.videoResolution = qualityConfig.video_resolution;
+        if (qualityConfig.audio_bitrate != null) result.audioBitrate = qualityConfig.audio_bitrate;
+        if (qualityConfig.audio_channels != null) result.audioChannels = String(qualityConfig.audio_channels);
+        if (qualityConfig.audio_rate != null) result.audioRate = String(qualityConfig.audio_rate);
+        if (qualityConfig.segment_duration != null) result.segmentDuration = qualityConfig.segment_duration;
+        return result;
     }
 
     _cleanTempDir() {
@@ -146,7 +173,7 @@ class HlsConverter {
         return path.join(this.tempDir, safeKey);
     }
 
-    ensureConversion(channelId, qualityLabel, streamUrl) {
+    ensureConversion(channelId, qualityLabel, streamUrl, qualityConfig) {
         const key = this._getKey(channelId, qualityLabel);
         const existing = this.activeConversions.get(key);
         if (existing) {
@@ -169,6 +196,7 @@ class HlsConverter {
             channelId,
             qualityLabel,
             streamUrl,
+            qualityConfig,
             lastAccess: Date.now(),
             idleTimer: null,
             startupTimer: null,
@@ -193,14 +221,14 @@ class HlsConverter {
         return state;
     }
 
-    ensureConversionWarmup(channelId, qualityLabel, streamUrl) {
+    ensureConversionWarmup(channelId, qualityLabel, streamUrl, qualityConfig) {
         const key = this._getKey(channelId, qualityLabel);
         const existing = this.activeConversions.get(key);
         if (existing) {
             this._recordAccess(key);
             return;
         }
-        this.ensureConversion(channelId, qualityLabel, streamUrl);
+        this.ensureConversion(channelId, qualityLabel, streamUrl, qualityConfig);
     }
 
     isManifestReady(channelId, qualityLabel) {
@@ -231,7 +259,7 @@ class HlsConverter {
         }
         state.started = true;
 
-        const preset = this._resolvePreset(state.qualityLabel);
+        const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
         const parsedUrl = new URL(state.streamUrl);
         const args = [];
 

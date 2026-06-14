@@ -36,12 +36,12 @@ module.exports = function(db, streamManager, hlsConverter) {
     );
     const updateChannelToken = db.prepare('UPDATE channels SET channel_token = ? WHERE id = ?');
     const insertQuality = db.prepare(
-        'INSERT INTO channel_qualities (channel_id, quality_label, stream_url, sort_order) VALUES (?, ?, ?, ?)'
+        'INSERT INTO channel_qualities (channel_id, quality_label, stream_url, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const getQualityById = db.prepare('SELECT * FROM channel_qualities WHERE id = ? AND channel_id = ?');
     const deleteQualityById = db.prepare('DELETE FROM channel_qualities WHERE id = ? AND channel_id = ?');
     const updateQuality = db.prepare(
-        'UPDATE channel_qualities SET quality_label = COALESCE(?, quality_label), stream_url = COALESCE(?, stream_url), sort_order = COALESCE(?, sort_order) WHERE id = ?'
+        'UPDATE channel_qualities SET quality_label = COALESCE(?, quality_label), stream_url = COALESCE(?, stream_url), sort_order = COALESCE(?, sort_order), preset_key = ?, video_codec = ?, video_bitrate = ?, video_maxrate = ?, video_bufsize = ?, video_preset = ?, video_profile = ?, video_level = ?, video_resolution = ?, audio_bitrate = ?, audio_channels = ?, audio_rate = ?, segment_duration = ? WHERE id = ?'
     );
     const getCodesByChannel = db.prepare(
         'SELECT ic.*, s.session_token FROM invite_codes ic LEFT JOIN sessions s ON ic.id = s.invite_code_id WHERE ic.channel_id = ?'
@@ -138,13 +138,20 @@ module.exports = function(db, streamManager, hlsConverter) {
 
     router.post('/channels/:id/qualities', (req, res) => {
         const { id } = req.params;
-        const { quality_label, stream_url, sort_order } = req.body;
+        const { quality_label, stream_url, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration } = req.body;
         if (!quality_label || !stream_url) return res.status(400).json({ error: 'quality_label and stream_url are required' });
 
         const existing = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? AND quality_label = ?').get(id, quality_label);
         if (existing) return res.status(400).json({ error: 'Quality label already exists for this channel' });
 
-        const result = insertQuality.run(id, quality_label, stream_url, sort_order || 0);
+        const result = insertQuality.run(
+            id, quality_label, stream_url, sort_order || 0,
+            preset_key || null, video_codec || null, video_bitrate || null,
+            video_maxrate || null, video_bufsize || null, video_preset || null,
+            video_profile || null, video_level || null, video_resolution || null,
+            audio_bitrate || null, audio_channels || null, audio_rate || null,
+            segment_duration || null
+        );
         const quality = getQualityById.get(result.lastInsertRowid, id);
         res.json(quality);
     });
@@ -159,8 +166,19 @@ module.exports = function(db, streamManager, hlsConverter) {
 
     router.patch('/channels/:id/qualities/:qid', (req, res) => {
         const { id, qid } = req.params;
-        const { quality_label, stream_url, sort_order } = req.body;
-        updateQuality.run(quality_label || null, stream_url || null, sort_order || null, qid);
+        const { quality_label, stream_url, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration } = req.body;
+
+        const nullIfEmpty = (v) => (v === '' || v === undefined) ? null : v;
+
+        updateQuality.run(
+            quality_label || null, stream_url || null, sort_order || null,
+            nullIfEmpty(preset_key), nullIfEmpty(video_codec), nullIfEmpty(video_bitrate),
+            nullIfEmpty(video_maxrate), nullIfEmpty(video_bufsize), nullIfEmpty(video_preset),
+            nullIfEmpty(video_profile), nullIfEmpty(video_level), nullIfEmpty(video_resolution),
+            nullIfEmpty(audio_bitrate), nullIfEmpty(audio_channels), nullIfEmpty(audio_rate),
+            nullIfEmpty(segment_duration),
+            qid
+        );
         const quality = getQualityById.get(qid, id);
         res.json(quality);
     });

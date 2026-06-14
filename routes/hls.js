@@ -85,7 +85,7 @@ module.exports = function(db, hlsConverter) {
 
         const qualities = getQualitiesByChannel.all(channel.id);
         for (const q of qualities) {
-            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url);
+            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
         }
 
         res.json({ warming: true, qualities: qualities.map(q => q.quality_label) });
@@ -111,7 +111,7 @@ module.exports = function(db, hlsConverter) {
         }
 
         if (hlsConverter.isAvailable()) {
-            hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url);
+            hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url, quality);
         }
 
         const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label);
@@ -134,7 +134,7 @@ module.exports = function(db, hlsConverter) {
             return res.end(JSON.stringify({ error: 'ffmpeg_not_available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
         }
 
-        hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url);
+        hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url, validation.quality);
 
         const manifest = await hlsConverter.waitForManifest(validation.channel.id, validation.quality.quality_label);
         if (!manifest) {

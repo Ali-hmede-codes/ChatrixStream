@@ -1421,3 +1421,97 @@
 .channel-section.code-section.hidden {
     display: none;
 }
+
+.quality-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.quality-edit .edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quality-edit .edit-row label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    min-width: 100px;
+    white-space: nowrap;
+}
+
+.quality-edit .edit-row input,
+.quality-edit .edit-row select {
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+}
+
+.quality-edit .encoding-fields {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.quality-edit .encoding-fields .edit-row label {
+    min-width: 120px;
+}
+
+.quality-display .preset-info {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    background: var(--bg-secondary);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.add-quality-form select {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.add-quality-encoding {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.add-quality-encoding.visible {
+    display: flex;
+}
+
+.add-quality-encoding input {
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.add-quality-form {
+    flex-wrap: wrap;
+}

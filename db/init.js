@@ -28,6 +28,19 @@ module.exports = function initDB(dbPath) {
             quality_label   TEXT NOT NULL,
             stream_url      TEXT NOT NULL,
             sort_order      INTEGER DEFAULT 0,
+            preset_key      TEXT DEFAULT NULL,
+            video_codec     TEXT DEFAULT NULL,
+            video_bitrate   TEXT DEFAULT NULL,
+            video_maxrate   TEXT DEFAULT NULL,
+            video_bufsize   TEXT DEFAULT NULL,
+            video_preset    TEXT DEFAULT NULL,
+            video_profile   TEXT DEFAULT NULL,
+            video_level     TEXT DEFAULT NULL,
+            video_resolution TEXT DEFAULT NULL,
+            audio_bitrate   TEXT DEFAULT NULL,
+            audio_channels  TEXT DEFAULT NULL,
+            audio_rate      TEXT DEFAULT NULL,
+            segment_duration INTEGER DEFAULT NULL,
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -93,6 +106,32 @@ module.exports = function initDB(dbPath) {
         }
     } catch (e) {
         console.error('Migration error (sessions invite_code_id nullable):', e.message);
+    }
+
+    // Migration: add encoding config columns to channel_qualities
+    try {
+        const cqColCheck = db.prepare("PRAGMA table_info(channel_qualities)").all();
+        const hasPresetKey = cqColCheck.some(col => col.name === 'preset_key');
+        if (!hasPresetKey) {
+            db.exec(`
+                ALTER TABLE channel_qualities ADD COLUMN preset_key TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_codec TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_bitrate TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_maxrate TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_bufsize TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_preset TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_profile TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_level TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN video_resolution TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN audio_bitrate TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN audio_channels TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN audio_rate TEXT DEFAULT NULL;
+                ALTER TABLE channel_qualities ADD COLUMN segment_duration INTEGER DEFAULT NULL;
+            `);
+            console.log('Migration: added encoding config columns to channel_qualities table');
+        }
+    } catch (e) {
+        console.error('Migration error (channel_qualities encoding columns):', e.message);
     }
 
     db.exec(`

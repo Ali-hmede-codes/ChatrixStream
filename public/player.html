@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ChatrixStream — Player</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/css/style.css">
@@ -31,7 +31,7 @@
         </div>
 
         <div id="video-container">
-            <video id="video-player" class="video-js vjs-default-skin" autoplay muted playsinline></video>
+            <video id="video-player" class="video-js vjs-default-skin" autoplay muted playsinline webkit-playsinline></video>
             <button id="unmute-btn" class="hidden" title="Unmute">&#x1F50A;</button>
 
             <div id="quality-bar">

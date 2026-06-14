@@ -242,15 +242,40 @@
                         ? '<p style="color: var(--text-secondary); font-size: 0.85rem">No streams configured</p>'
                         : sorted.map(function(q, idx) {
                             var isMain = q.quality_label.toLowerCase() === 'source' || q.quality_label.toLowerCase() === 'main' || idx === 0 && sorted.length === 1;
+                            var presetDisplay = q.preset_key ? q.preset_key : 'auto';
+                            var encSummary = buildEncodingSummary(q);
                             return '<div class="stream-quality-row' + (isMain ? ' main-stream' : '') + '" data-quality-id="' + q.id + '" data-channel-id="' + ch.id + '">' +
                                 '<div class="quality-display">' +
                                     '<span class="label">' + q.quality_label + '</span>' +
                                     '<span class="url">' + q.stream_url + '</span>' +
+                                    '<span class="preset-info">' + presetDisplay + ' — ' + encSummary + '</span>' +
                                 '</div>' +
                                 '<div class="quality-edit hidden">' +
-                                    '<input type="text" class="edit-label" value="' + q.quality_label + '">' +
-                                    '<input type="text" class="edit-url" value="' + q.stream_url + '">' +
-                                    '<input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px">' +
+                                    '<div class="edit-row"><label>Label</label><input type="text" class="edit-label" value="' + q.quality_label + '"></div>' +
+                                    '<div class="edit-row"><label>Stream URL</label><input type="text" class="edit-url" value="' + q.stream_url + '"></div>' +
+                                    '<div class="edit-row"><label>Sort Order</label><input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px"></div>' +
+                                    '<div class="edit-row"><label>Preset</label><select class="edit-preset-key">' +
+                                        '<option value="">Auto (resolve from label)</option>' +
+                                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (480x360, ~400k)</option>' +
+                                        '<option value="medium"' + (q.preset_key === 'medium' ? ' selected' : '') + '>Medium (source res, ~1000k)</option>' +
+                                        '<option value="high"' + (q.preset_key === 'high' ? ' selected' : '') + '>High / Source (copy)</option>' +
+                                        '<option value="copy"' + (q.preset_key === 'copy' ? ' selected' : '') + '>Copy (no transcode)</option>' +
+                                        '<option value="custom"' + (q.preset_key === 'custom' ? ' selected' : '') + '>Custom</option>' +
+                                    '</select></div>' +
+                                    '<div class="encoding-fields">' +
+                                        '<div class="edit-row"><label>Video Codec</label><input type="text" class="edit-video-codec" value="' + (q.video_codec || '') + '" placeholder="libx264 or copy"></div>' +
+                                        '<div class="edit-row"><label>Video Bitrate</label><input type="text" class="edit-video-bitrate" value="' + (q.video_bitrate || '') + '" placeholder="e.g. 800k"></div>' +
+                                        '<div class="edit-row"><label>Video Max Rate</label><input type="text" class="edit-video-maxrate" value="' + (q.video_maxrate || '') + '" placeholder="e.g. 1000k"></div>' +
+                                        '<div class="edit-row"><label>Video Buf Size</label><input type="text" class="edit-video-bufsize" value="' + (q.video_bufsize || '') + '" placeholder="e.g. 1200k"></div>' +
+                                        '<div class="edit-row"><label>Enc Preset</label><input type="text" class="edit-video-preset" value="' + (q.video_preset || '') + '" placeholder="ultrafast, veryfast"></div>' +
+                                        '<div class="edit-row"><label>Profile</label><input type="text" class="edit-video-profile" value="' + (q.video_profile || '') + '" placeholder="baseline, main"></div>' +
+                                        '<div class="edit-row"><label>Level</label><input type="text" class="edit-video-level" value="' + (q.video_level || '') + '" placeholder="3.0, 3.1"></div>' +
+                                        '<div class="edit-row"><label>Resolution</label><input type="text" class="edit-video-resolution" value="' + (q.video_resolution || '') + '" placeholder="640x480"></div>' +
+                                        '<div class="edit-row"><label>Audio Bitrate</label><input type="text" class="edit-audio-bitrate" value="' + (q.audio_bitrate || '') + '" placeholder="64k"></div>' +
+                                        '<div class="edit-row"><label>Audio Ch</label><input type="text" class="edit-audio-channels" value="' + (q.audio_channels || '') + '" placeholder="1 or 2"></div>' +
+                                        '<div class="edit-row"><label>Audio Rate</label><input type="text" class="edit-audio-rate" value="' + (q.audio_rate || '') + '" placeholder="48000"></div>' +
+                                        '<div class="edit-row"><label>Seg Duration</label><input type="number" class="edit-segment-duration" value="' + (q.segment_duration || '') + '" placeholder="2-6" style="width:80px"></div>' +
+                                    '</div>' +
                                 '</div>' +
                                 '<div class="quality-actions">' +
                                     '<button class="edit-btn" data-action="edit-quality" data-channel-id="' + ch.id + '" data-quality-id="' + q.id + '">Edit</button>' +
@@ -265,7 +290,29 @@
                 '<div class="add-quality-form">' +
                     '<input type="text" id="stream-add-label-' + ch.id + '" placeholder="Label (hd, sd, 4k)">' +
                     '<input type="text" id="stream-add-url-' + ch.id + '" placeholder="Stream URL">' +
+                    '<select id="stream-add-preset-' + ch.id + '">' +
+                        '<option value="">Auto (resolve from label)</option>' +
+                        '<option value="low">Low (480x360, ~400k)</option>' +
+                        '<option value="medium">Medium (source res, ~1000k)</option>' +
+                        '<option value="high">High / Source (copy)</option>' +
+                        '<option value="copy">Copy (no transcode)</option>' +
+                        '<option value="custom">Custom</option>' +
+                    '</select>' +
                     '<button class="btn-success" data-action="add-quality-stream" data-id="' + ch.id + '">Add</button>' +
+                    '<div class="add-quality-encoding" id="stream-add-encoding-' + ch.id + '">' +
+                        '<input type="text" id="stream-add-vcodec-' + ch.id + '" placeholder="Video codec (libx264/copy)">' +
+                        '<input type="text" id="stream-add-vbitrate-' + ch.id + '" placeholder="Video bitrate (800k)">' +
+                        '<input type="text" id="stream-add-vmaxrate-' + ch.id + '" placeholder="Video maxrate (1000k)">' +
+                        '<input type="text" id="stream-add-vbufsize-' + ch.id + '" placeholder="Video bufsize (1200k)">' +
+                        '<input type="text" id="stream-add-vpreset-' + ch.id + '" placeholder="Encoding preset (ultrafast)">' +
+                        '<input type="text" id="stream-add-vprofile-' + ch.id + '" placeholder="Profile (baseline/main)">' +
+                        '<input type="text" id="stream-add-vlevel-' + ch.id + '" placeholder="Level (3.0)">' +
+                        '<input type="text" id="stream-add-vres-' + ch.id + '" placeholder="Resolution (640x480)">' +
+                        '<input type="text" id="stream-add-abitrate-' + ch.id + '" placeholder="Audio bitrate (64k)">' +
+                        '<input type="text" id="stream-add-achannels-' + ch.id + '" placeholder="Audio channels (1/2)">' +
+                        '<input type="text" id="stream-add-arate-' + ch.id + '" placeholder="Audio rate (48000)">' +
+                        '<input type="text" id="stream-add-segdur-' + ch.id + '" placeholder="Segment dur (2-6)">' +
+                    '</div>' +
                 '</div>';
             streamsContainer.appendChild(card);
         });
@@ -413,7 +460,29 @@
                     '<div class="add-quality-form">' +
                         '<input type="text" id="add-quality-label-' + channel.id + '" placeholder="Label (hd, sd, 4k)">' +
                         '<input type="text" id="add-quality-url-' + channel.id + '" placeholder="Stream URL">' +
+                        '<select id="add-quality-preset-' + channel.id + '">' +
+                            '<option value="">Auto (resolve from label)</option>' +
+                            '<option value="low">Low (480x360, ~400k)</option>' +
+                            '<option value="medium">Medium (source res, ~1000k)</option>' +
+                            '<option value="high">High / Source (copy)</option>' +
+                            '<option value="copy">Copy (no transcode)</option>' +
+                            '<option value="custom">Custom</option>' +
+                        '</select>' +
                         '<button class="btn-success" data-action="add-quality" data-id="' + channel.id + '">Add</button>' +
+                        '<div class="add-quality-encoding" id="add-quality-encoding-' + channel.id + '">' +
+                            '<input type="text" id="add-quality-vcodec-' + channel.id + '" placeholder="Video codec (libx264/copy)">' +
+                            '<input type="text" id="add-quality-vbitrate-' + channel.id + '" placeholder="Video bitrate (800k)">' +
+                            '<input type="text" id="add-quality-vmaxrate-' + channel.id + '" placeholder="Video maxrate (1000k)">' +
+                            '<input type="text" id="add-quality-vbufsize-' + channel.id + '" placeholder="Video bufsize (1200k)">' +
+                            '<input type="text" id="add-quality-vpreset-' + channel.id + '" placeholder="Encoding preset (ultrafast)">' +
+                            '<input type="text" id="add-quality-vprofile-' + channel.id + '" placeholder="Profile (baseline/main)">' +
+                            '<input type="text" id="add-quality-vlevel-' + channel.id + '" placeholder="Level (3.0)">' +
+                            '<input type="text" id="add-quality-vres-' + channel.id + '" placeholder="Resolution (640x480)">' +
+                            '<input type="text" id="add-quality-abitrate-' + channel.id + '" placeholder="Audio bitrate (64k)">' +
+                            '<input type="text" id="add-quality-achannels-' + channel.id + '" placeholder="Audio channels (1/2)">' +
+                            '<input type="text" id="add-quality-arate-' + channel.id + '" placeholder="Audio rate (48000)">' +
+                            '<input type="text" id="add-quality-segdur-' + channel.id + '" placeholder="Segment duration (2-6)">' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
                 '<div class="channel-section">' +
@@ -440,8 +509,10 @@
         var sorted = channel.qualities.slice().sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
 
         sorted.forEach(function(q, idx) {
-            var item = document.createElement('div');
             var isMain = q.quality_label.toLowerCase() === 'source' || q.quality_label.toLowerCase() === 'main' || idx === 0 && sorted.length === 1;
+            var presetDisplay = q.preset_key ? q.preset_key : 'auto (' + resolvePresetForDisplay(q.quality_label) + ')';
+            var encodingSummary = buildEncodingSummary(q);
+            var item = document.createElement('div');
             item.className = 'quality-item' + (isMain ? ' main-stream' : '');
             item.dataset.qualityId = q.id;
             item.dataset.channelId = channel.id;
@@ -449,11 +520,34 @@
                 '<div class="quality-display">' +
                     '<span class="label">' + q.quality_label + '</span>' +
                     '<span class="url">' + q.stream_url + '</span>' +
+                    '<span class="preset-info">' + presetDisplay + ' — ' + encodingSummary + '</span>' +
                 '</div>' +
                 '<div class="quality-edit hidden">' +
-                    '<input type="text" class="edit-label" value="' + q.quality_label + '">' +
-                    '<input type="text" class="edit-url" value="' + q.stream_url + '">' +
-                    '<input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px">' +
+                    '<div class="edit-row"><label>Label</label><input type="text" class="edit-label" value="' + q.quality_label + '"></div>' +
+                    '<div class="edit-row"><label>Stream URL</label><input type="text" class="edit-url" value="' + q.stream_url + '"></div>' +
+                    '<div class="edit-row"><label>Sort Order</label><input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px"></div>' +
+                    '<div class="edit-row"><label>Preset</label><select class="edit-preset-key">' +
+                        '<option value="">Auto (resolve from label)</option>' +
+                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (480x360, ~400k)</option>' +
+                        '<option value="medium"' + (q.preset_key === 'medium' ? ' selected' : '') + '>Medium (source res, ~1000k)</option>' +
+                        '<option value="high"' + (q.preset_key === 'high' ? ' selected' : '') + '>High / Source (copy, no transcode)</option>' +
+                        '<option value="copy"' + (q.preset_key === 'copy' ? ' selected' : '') + '>Copy (stream copy, no transcode)</option>' +
+                        '<option value="custom"' + (q.preset_key === 'custom' ? ' selected' : '') + '>Custom</option>' +
+                    '</select></div>' +
+                    '<div class="encoding-fields">' +
+                        '<div class="edit-row"><label>Video Codec</label><input type="text" class="edit-video-codec" value="' + (q.video_codec || '') + '" placeholder="libx264 or copy"></div>' +
+                        '<div class="edit-row"><label>Video Bitrate</label><input type="text" class="edit-video-bitrate" value="' + (q.video_bitrate || '') + '" placeholder="e.g. 800k"></div>' +
+                        '<div class="edit-row"><label>Video Max Rate</label><input type="text" class="edit-video-maxrate" value="' + (q.video_maxrate || '') + '" placeholder="e.g. 1000k"></div>' +
+                        '<div class="edit-row"><label>Video Buffer Size</label><input type="text" class="edit-video-bufsize" value="' + (q.video_bufsize || '') + '" placeholder="e.g. 1200k"></div>' +
+                        '<div class="edit-row"><label>Encoding Preset</label><input type="text" class="edit-video-preset" value="' + (q.video_preset || '') + '" placeholder="ultrafast, veryfast, fast..."></div>' +
+                        '<div class="edit-row"><label>Profile</label><input type="text" class="edit-video-profile" value="' + (q.video_profile || '') + '" placeholder="baseline, main, high"></div>' +
+                        '<div class="edit-row"><label>Level</label><input type="text" class="edit-video-level" value="' + (q.video_level || '') + '" placeholder="3.0, 3.1, 4.0"></div>' +
+                        '<div class="edit-row"><label>Resolution</label><input type="text" class="edit-video-resolution" value="' + (q.video_resolution || '') + '" placeholder="e.g. 640x480 or empty for source"></div>' +
+                        '<div class="edit-row"><label>Audio Bitrate</label><input type="text" class="edit-audio-bitrate" value="' + (q.audio_bitrate || '') + '" placeholder="e.g. 64k"></div>' +
+                        '<div class="edit-row"><label>Audio Channels</label><input type="text" class="edit-audio-channels" value="' + (q.audio_channels || '') + '" placeholder="1 or 2"></div>' +
+                        '<div class="edit-row"><label>Audio Rate</label><input type="text" class="edit-audio-rate" value="' + (q.audio_rate || '') + '" placeholder="44100 or 48000"></div>' +
+                        '<div class="edit-row"><label>Segment Duration</label><input type="number" class="edit-segment-duration" value="' + (q.segment_duration || '') + '" placeholder="2-6 seconds" style="width:80px"></div>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="quality-actions">' +
                     '<button class="edit-btn" data-action="edit-quality" data-channel-id="' + channel.id + '" data-quality-id="' + q.id + '">Edit</button>' +
@@ -463,6 +557,36 @@
                 '</div>';
             list.appendChild(item);
         });
+    }
+
+    function resolvePresetForDisplay(label) {
+        var lower = label.toLowerCase().trim();
+        if (lower === 'low' || lower.includes('low')) return 'low';
+        if (lower === 'medium' || lower.includes('medium')) return 'medium';
+        if (lower === 'high' || lower.includes('high')) return 'high';
+        if (lower === 'source' || lower === 'copy') return 'copy';
+        var resMatch = lower.match(/(\d+)p/);
+        if (resMatch) {
+            var h = parseInt(resMatch[1]);
+            if (h <= 360) return 'low';
+            if (h <= 720) return 'medium';
+        }
+        return 'high';
+    }
+
+    function buildEncodingSummary(q) {
+        if (q.video_codec === 'copy') return 'stream copy (no transcode)';
+        if (q.video_codec || q.video_bitrate || q.video_resolution) {
+            var parts = [];
+            if (q.video_codec) parts.push(q.video_codec);
+            if (q.video_bitrate) parts.push(q.video_bitrate);
+            if (q.video_resolution) parts.push(q.video_resolution);
+            return parts.join(', ');
+        }
+        var preset = resolvePresetForDisplay(q.quality_label || q.label || '');
+        if (preset === 'low') return 'libx264, ~400k, 480x360';
+        if (preset === 'medium') return 'libx264, ~1000k, source res';
+        return 'stream copy (no transcode)';
     }
 
     async function loadCodes(channelId) {
@@ -669,83 +793,36 @@
             var channelId = btn.dataset.id;
             var label = document.getElementById('add-quality-label-' + channelId).value.trim();
             var url = document.getElementById('add-quality-url-' + channelId).value.trim();
+            var presetKey = document.getElementById('add-quality-preset-' + channelId);
+            presetKey = presetKey ? presetKey.value : '';
             if (!label || !url) {
                 showToast('Label and URL required', 'error');
                 return;
             }
             var ch = channels.find(function(c) { return c.id == channelId; });
             var sortOrder = ch && ch.qualities ? ch.qualities.length : 0;
+            var body = { quality_label: label, stream_url: url, sort_order: sortOrder, preset_key: presetKey };
+            var encIds = [
+                ['add-quality-vcodec-' + channelId, 'video_codec'],
+                ['add-quality-vbitrate-' + channelId, 'video_bitrate'],
+                ['add-quality-vmaxrate-' + channelId, 'video_maxrate'],
+                ['add-quality-vbufsize-' + channelId, 'video_bufsize'],
+                ['add-quality-vpreset-' + channelId, 'video_preset'],
+                ['add-quality-vprofile-' + channelId, 'video_profile'],
+                ['add-quality-vlevel-' + channelId, 'video_level'],
+                ['add-quality-vres-' + channelId, 'video_resolution'],
+                ['add-quality-abitrate-' + channelId, 'audio_bitrate'],
+                ['add-quality-achannels-' + channelId, 'audio_channels'],
+                ['add-quality-arate-' + channelId, 'audio_rate'],
+                ['add-quality-segdur-' + channelId, 'segment_duration']
+            ];
+            encIds.forEach(function(pair) {
+                var el = document.getElementById(pair[0]);
+                if (el && el.value.trim()) body[pair[1]] = el.value.trim();
+            });
             await adminFetch('/channels/' + channelId + '/qualities', {
                 method: 'POST',
-                body: { quality_label: label, stream_url: url, sort_order: sortOrder }
-            });
-            showToast('Quality "' + label + '" added', 'success');
-            loadChannels();
-            return;
-        }
-
-        if (action === 'remove-quality') {
-            if (!confirm('Remove this quality? Users watching it will be disconnected.')) return;
-            await adminFetch('/channels/' + btn.dataset.channelId + '/qualities/' + btn.dataset.qualityId, { method: 'DELETE' });
-            showToast('Quality removed', 'success');
-            loadChannels();
-            return;
-        }
-
-        if (action === 'edit-quality') {
-            var row = btn.closest('.quality-item, .stream-quality-row');
-            row.querySelector('.quality-display').classList.add('hidden');
-            row.querySelector('.quality-edit').classList.remove('hidden');
-            row.querySelector('.edit-btn').classList.add('hidden');
-            row.querySelector('.save-btn').classList.remove('hidden');
-            row.querySelector('.cancel-btn').classList.remove('hidden');
-            row.querySelector('.edit-label').focus();
-            return;
-        }
-
-        if (action === 'save-quality') {
-            var row = btn.closest('.quality-item, .stream-quality-row');
-            var newLabel = row.querySelector('.edit-label').value.trim();
-            var newUrl = row.querySelector('.edit-url').value.trim();
-            var newSort = parseInt(row.querySelector('.edit-sort').value) || 0;
-            if (!newLabel || !newUrl) {
-                showToast('Label and URL required', 'error');
-                return;
-            }
-            await adminFetch('/channels/' + btn.dataset.channelId + '/qualities/' + btn.dataset.qualityId, {
-                method: 'PATCH',
-                body: { quality_label: newLabel, stream_url: newUrl, sort_order: newSort }
-            });
-            showToast('Quality updated', 'success');
-            loadChannels();
-            return;
-        }
-
-        if (action === 'cancel-edit-quality') {
-            var row = btn.closest('.quality-item, .stream-quality-row');
-            row.querySelector('.quality-display').classList.remove('hidden');
-            row.querySelector('.quality-edit').classList.add('hidden');
-            row.querySelector('.edit-btn').classList.remove('hidden');
-            row.querySelector('.save-btn').classList.add('hidden');
-            row.querySelector('.cancel-btn').classList.add('hidden');
-            return;
-        }
-
-        if (action === 'add-quality-stream') {
-            var channelId = btn.dataset.id;
-            var labelEl = document.getElementById('stream-add-label-' + channelId);
-            var urlEl = document.getElementById('stream-add-url-' + channelId);
-            var label = labelEl.value.trim();
-            var url = urlEl.value.trim();
-            if (!label || !url) {
-                showToast('Label and URL required', 'error');
-                return;
-            }
-            var ch = channels.find(function(c) { return c.id == channelId; });
-            var sortOrder = ch && ch.qualities ? ch.qualities.length : 0;
-            await adminFetch('/channels/' + channelId + '/qualities', {
-                method: 'POST',
-                body: { quality_label: label, stream_url: url, sort_order: sortOrder }
+                body: body
             });
             showToast('Quality "' + label + '" added', 'success');
             loadChannels();
