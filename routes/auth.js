@@ -108,7 +108,13 @@ module.exports = function(db) {
             return res.status(403).json({ error: 'Channel link expired' });
         }
 
-        const result = createSessionForChannel(db, channel.id);
+        let result;
+        try {
+            result = createSessionForChannel(db, channel.id);
+        } catch (dbErr) {
+            console.error('DB error creating session for free channel:', dbErr.message);
+            return res.status(500).json({ error: 'Failed to create session. Please try again.' });
+        }
 
         if (result.error) {
             const statusMap = {

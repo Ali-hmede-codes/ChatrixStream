@@ -85,10 +85,15 @@ module.exports = function initDB(dbPath) {
 
     // Migration: make invite_code_id nullable in sessions (for codeless channel access)
     try {
+        // Clean up stale sessions_new from any previous failed migration attempt
+        db.exec('DROP TABLE IF EXISTS sessions_new');
+
         const sessionColCheck = db.prepare("PRAGMA table_info(sessions)").all();
         const inviteCodeCol = sessionColCheck.find(col => col.name === 'invite_code_id');
         if (inviteCodeCol && inviteCodeCol.notnull === 1) {
-            // Recreate sessions table with nullable invite_code_id
+            // Disable foreign keys during table rebuild (cannot change pragma inside a transaction)
+            db.pragma('foreign_keys = OFF');
+
             db.exec(`
                 CREATE TABLE sessions_new (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,9 +107,12 @@ module.exports = function initDB(dbPath) {
                 DROP TABLE sessions;
                 ALTER TABLE sessions_new RENAME TO sessions;
             `);
+
+            db.pragma('foreign_keys = ON');
             console.log('Migration: made invite_code_id nullable in sessions table');
         }
     } catch (e) {
+        try { db.pragma('foreign_keys = ON'); } catch (_) {}
         console.error('Migration error (sessions invite_code_id nullable):', e.message);
     }
 
