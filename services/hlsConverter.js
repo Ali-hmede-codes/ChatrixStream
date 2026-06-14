@@ -36,20 +36,20 @@ const QUALITY_PRESETS = {
         copyVideo: false
     },
     high: {
-        videoCodec: 'copy',
-        videoBitrate: null,
-        videoMaxRate: null,
-        videoBufSize: null,
-        videoPreset: null,
-        videoTune: null,
-        videoProfile: null,
-        videoLevel: null,
+        videoCodec: 'libx264',
+        videoBitrate: '2500k',
+        videoMaxRate: '3000k',
+        videoBufSize: '5000k',
+        videoPreset: 'superfast',
+        videoTune: 'zerolatency',
+        videoProfile: 'high',
+        videoLevel: '4.1',
         videoResolution: null,
         audioBitrate: '128k',
         audioChannels: '2',
         audioRate: '48000',
         segmentDuration: 2,
-        copyVideo: true
+        copyVideo: false
     }
 };
 
@@ -316,7 +316,7 @@ class HlsConverter {
         args.push('-hls_time', String(segDuration));
         args.push('-hls_list_size', String(this.listSize));
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+split_by_time+independent_segments');
-        args.push('-hls_init_time', '0.8');
+        // hls_init_time only applies to fMP4 segments, not MPEG-TS
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');

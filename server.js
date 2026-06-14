@@ -45,8 +45,13 @@ const compression = require('compression');
 app.use(compression({
     filter: (req, res) => {
         if (req.headers['x-no-compression']) return false;
-        const type = res.getHeader('Content-Type');
-        if (type && (type.includes('mpegurl') || type.includes('text/') || type.includes('json'))) return true;
+        const type = res.getHeader('Content-Type') || '';
+        // Never compress HLS manifests, segments, or raw streams
+        if (type.includes('mpegurl') || type.includes('video/') || type.includes('octet-stream')) return false;
+        // Respect no-transform Cache-Control
+        const cc = res.getHeader('Cache-Control') || '';
+        if (cc.includes('no-transform')) return false;
+        if (type.includes('text/') || type.includes('json')) return true;
         return false;
     },
     threshold: 256
