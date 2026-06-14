@@ -182,6 +182,7 @@ class StreamManager {
         if (!state) return;
 
         if (state.idleTimer) clearTimeout(state.idleTimer);
+        if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
 
         if (state.sourceResponse) state.sourceResponse.destroy();
         state.passThrough.destroy();
@@ -194,11 +195,16 @@ class StreamManager {
     }
 
     stopAllStreamsForChannel(channelId) {
+        // Collect keys first to avoid modifying Map during iteration
+        const keysToStop = [];
         for (const key of this.activeStreams.keys()) {
             if (key.startsWith(`${channelId}:`)) {
-                const qualityLabel = key.split(':')[1];
-                this.stopStream(channelId, qualityLabel);
+                keysToStop.push(key);
             }
+        }
+        for (const key of keysToStop) {
+            const qualityLabel = key.split(':')[1];
+            this.stopStream(channelId, qualityLabel);
         }
     }
 }

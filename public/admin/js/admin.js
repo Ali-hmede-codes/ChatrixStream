@@ -870,6 +870,116 @@
             return;
         }
 
+        if (action === 'edit-quality') {
+            var row = btn.closest('.quality-item, .stream-quality-row');
+            if (!row) return;
+            row.querySelector('.quality-display').classList.add('hidden');
+            row.querySelector('.quality-edit').classList.remove('hidden');
+            row.querySelector('.edit-btn').classList.add('hidden');
+            row.querySelector('.save-btn').classList.remove('hidden');
+            row.querySelector('.cancel-btn').classList.remove('hidden');
+            return;
+        }
+
+        if (action === 'cancel-edit-quality') {
+            var row = btn.closest('.quality-item, .stream-quality-row');
+            if (!row) return;
+            row.querySelector('.quality-display').classList.remove('hidden');
+            row.querySelector('.quality-edit').classList.add('hidden');
+            row.querySelector('.edit-btn').classList.remove('hidden');
+            row.querySelector('.save-btn').classList.add('hidden');
+            row.querySelector('.cancel-btn').classList.add('hidden');
+            return;
+        }
+
+        if (action === 'save-quality') {
+            var channelId = btn.dataset.channelId;
+            var qualityId = btn.dataset.qualityId;
+            var row = btn.closest('.quality-item, .stream-quality-row');
+            if (!row) return;
+            var body = {
+                quality_label: row.querySelector('.edit-label').value.trim() || null,
+                stream_url: row.querySelector('.edit-url').value.trim() || null,
+                sort_order: parseInt(row.querySelector('.edit-sort').value) || null,
+                preset_key: row.querySelector('.edit-preset-key').value || '',
+                video_codec: row.querySelector('.edit-video-codec').value.trim() || '',
+                video_bitrate: row.querySelector('.edit-video-bitrate').value.trim() || '',
+                video_maxrate: row.querySelector('.edit-video-maxrate').value.trim() || '',
+                video_bufsize: row.querySelector('.edit-video-bufsize').value.trim() || '',
+                video_preset: row.querySelector('.edit-video-preset').value.trim() || '',
+                video_profile: row.querySelector('.edit-video-profile').value.trim() || '',
+                video_level: row.querySelector('.edit-video-level').value.trim() || '',
+                video_resolution: row.querySelector('.edit-video-resolution').value.trim() || '',
+                audio_bitrate: row.querySelector('.edit-audio-bitrate').value.trim() || '',
+                audio_channels: row.querySelector('.edit-audio-channels').value.trim() || '',
+                audio_rate: row.querySelector('.edit-audio-rate').value.trim() || '',
+                segment_duration: row.querySelector('.edit-segment-duration').value.trim() || ''
+            };
+            try {
+                await adminFetch('/channels/' + channelId + '/qualities/' + qualityId, { method: 'PATCH', body: body });
+                showToast('Quality updated', 'success');
+                loadChannels();
+            } catch (e) {
+                showToast(e.message || 'Failed to update quality', 'error');
+            }
+            return;
+        }
+
+        if (action === 'remove-quality') {
+            var channelId = btn.dataset.channelId;
+            var qualityId = btn.dataset.qualityId;
+            if (!confirm('Remove this quality? The stream will be stopped.')) return;
+            try {
+                await adminFetch('/channels/' + channelId + '/qualities/' + qualityId, { method: 'DELETE' });
+                showToast('Quality removed', 'success');
+                loadChannels();
+            } catch (e) {
+                showToast(e.message || 'Failed to remove quality', 'error');
+            }
+            return;
+        }
+
+        if (action === 'add-quality-stream') {
+            var channelId = btn.dataset.id;
+            var label = document.getElementById('stream-add-label-' + channelId).value.trim();
+            var url = document.getElementById('stream-add-url-' + channelId).value.trim();
+            var presetKey = document.getElementById('stream-add-preset-' + channelId);
+            presetKey = presetKey ? presetKey.value : '';
+            if (!label || !url) {
+                showToast('Label and URL required', 'error');
+                return;
+            }
+            var ch = channels.find(function(c) { return c.id == channelId; });
+            var sortOrder = ch && ch.qualities ? ch.qualities.length : 0;
+            var body = { quality_label: label, stream_url: url, sort_order: sortOrder, preset_key: presetKey };
+            var encIds = [
+                ['stream-add-vcodec-' + channelId, 'video_codec'],
+                ['stream-add-vbitrate-' + channelId, 'video_bitrate'],
+                ['stream-add-vmaxrate-' + channelId, 'video_maxrate'],
+                ['stream-add-vbufsize-' + channelId, 'video_bufsize'],
+                ['stream-add-vpreset-' + channelId, 'video_preset'],
+                ['stream-add-vprofile-' + channelId, 'video_profile'],
+                ['stream-add-vlevel-' + channelId, 'video_level'],
+                ['stream-add-vres-' + channelId, 'video_resolution'],
+                ['stream-add-abitrate-' + channelId, 'audio_bitrate'],
+                ['stream-add-achannels-' + channelId, 'audio_channels'],
+                ['stream-add-arate-' + channelId, 'audio_rate'],
+                ['stream-add-segdur-' + channelId, 'segment_duration']
+            ];
+            encIds.forEach(function(pair) {
+                var el = document.getElementById(pair[0]);
+                if (el && el.value.trim()) body[pair[1]] = el.value.trim();
+            });
+            try {
+                await adminFetch('/channels/' + channelId + '/qualities', { method: 'POST', body: body });
+                showToast('Quality "' + label + '" added', 'success');
+                loadChannels();
+            } catch (e) {
+                showToast(e.message || 'Failed to add quality', 'error');
+            }
+            return;
+        }
+
         if (action === 'edit-user') {
             openEditUserModal(parseInt(btn.dataset.userId), btn.dataset.userUsername, btn.dataset.userRole);
             return;

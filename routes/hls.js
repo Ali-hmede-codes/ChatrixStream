@@ -13,10 +13,19 @@ function getCachedSession(db, sessionToken) {
     }
     const result = validateSession(db, sessionToken);
     sessionCache.set(sessionToken, { result, timestamp: now });
+    // Evict stale entries when cache grows too large
     if (sessionCache.size > 500) {
-        const oldestKey = null;
         for (const [key, val] of sessionCache) {
             if (now - val.timestamp > SESSION_CACHE_TTL) {
+                sessionCache.delete(key);
+            }
+        }
+        // If still too large after TTL eviction, remove oldest entries
+        if (sessionCache.size > 500) {
+            const entries = Array.from(sessionCache.entries());
+            entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+            const toRemove = entries.slice(0, entries.length - 400);
+            for (const [key] of toRemove) {
                 sessionCache.delete(key);
             }
         }
@@ -184,16 +193,23 @@ module.exports = function(db, hlsConverter) {
     router.get('/:channelToken/:quality/index.m3u8', async (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
+            // Return 403 with JSON + special header so player can detect session expiry
+            // Also include proper CORS and cache headers
             res.writeHead(403, {
                 'Content-Type': 'application/json',
                 'Cache-Control': 'no-cache, no-store',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'X-Stream-Error': 'session_expired'
             });
             return res.end(JSON.stringify({ error: validation.error, expired: true }));
         }
 
         if (!hlsConverter.isAvailable()) {
-            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.writeHead(503, {
+                'Content-Type': 'application/json',
+                'Retry-After': '10',
+                'Access-Control-Allow-Origin': '*'
+            });
             return res.end(JSON.stringify({ error: 'ffmpeg_not_available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
         }
 
@@ -203,8 +219,10 @@ module.exports = function(db, hlsConverter) {
         if (!manifest) {
             res.writeHead(503, {
                 'Content-Type': 'application/json',
-                'Retry-After': '2',
-                'Access-Control-Allow-Origin': '*'
+                'Retry-After': '3',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Expose-Headers': 'Content-Type, Retry-After, X-Stream-Error',
+                'X-Stream-Error': 'stream_not_ready'
             });
             return res.end(JSON.stringify({ error: 'stream_not_ready', message: 'Stream is starting up, please retry' }));
         }

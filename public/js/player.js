@@ -26,6 +26,9 @@
     let stallCount = 0;
     let lastStallTime = null;
     let bandwidthUpdateInterval = null;
+    let maxReconnectAttempts = 10;
+    let reconnectAttempts = 0;
+    let manifestReadyCheckTimer = null;
 
     function trackBandwidth() {
         if (bandwidthUpdateInterval) clearInterval(bandwidthUpdateInterval);
@@ -81,6 +84,8 @@
 
     function getQualityLower(qualityLabel) {
         var sorted = getAvailableQualities();
+        // sorted is ascending sort_order: [highest quality, ..., lowest quality]
+        // "lower" quality = higher sort_order = later in array
         for (var i = 0; i < sorted.length; i++) {
             if (sorted[i].label === qualityLabel && i + 1 < sorted.length) {
                 return sorted[i + 1].label;
@@ -91,7 +96,8 @@
 
     function getLowestQuality() {
         var sorted = getAvailableQualities();
-        return sorted.length > 0 ? sorted[0].label : null;
+        // Last item has highest sort_order = lowest quality
+        return sorted.length > 0 ? sorted[sorted.length - 1].label : null;
     }
 
     function getVhsConfig() {
@@ -311,6 +317,8 @@
             cancelBufferingDebounce();
             hideLoading();
             consecutiveNetworkErrors = 0;
+            reconnectAttempts = 0;
+            reconnectBackoff = 2000;
             stallCount = 0;
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
             if (tech && tech.vhs && tech.vhs.bandwidth) {
@@ -353,6 +361,7 @@
             var code = error.code;
             var message = error.message || '';
 
+            // First, check if this is a 403 from the XHR response (Video.js often reports as code 4)
             checkSessionExpired().then(function(expired) {
                 if (expired) {
                     handleSessionExpired('Session expired');
@@ -380,8 +389,16 @@
                     vjsPlayer.reset();
                     startStream(currentQuality);
                 } else if (code === 4) {
-                    console.warn('Source error, reconnecting...');
-                    scheduleReconnect();
+                    // Check if this is a 503 (stream not ready) — retryable
+                    var is503 = message.indexOf('503') !== -1 || message.indexOf('Service Unavailable') !== -1;
+                    if (is503) {
+                        console.warn('Stream not ready (503), waiting and retrying...');
+                        // Use longer delay for 503 — stream is still starting up
+                        scheduleReconnect(5000);
+                    } else {
+                        console.warn('Source error (code 4), reconnecting...');
+                        scheduleReconnect();
+                    }
                 } else {
                     console.error('Unknown error code:', code, message);
                     destroyPlayer();
@@ -477,25 +494,22 @@
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
         }
+        if (manifestReadyCheckTimer) {
+            clearTimeout(manifestReadyCheckTimer);
+            manifestReadyCheckTimer = null;
+        }
         reconnectBackoff = 2000;
+        reconnectAttempts = 0;
 
         document.querySelectorAll('.quality-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.quality === newQuality);
         });
 
-        currentQuality = newQuality;
-        showLoading('Loading ' + newQuality.toUpperCase() + ' stream...');
-
         vjsPlayer.reset();
         vjsPlayer.muted(!userUnmuted);
 
-        var hlsUrl = getHlsUrl(newQuality);
-        vjsPlayer.src({
-            src: hlsUrl,
-            type: 'application/x-mpegURL'
-        });
-
-        vjsPlayer.play().catch(function() {});
+        // Use startStream which includes manifest-ready polling
+        startStream(newQuality);
     }
 
     function getHlsUrl(quality) {
@@ -516,6 +530,65 @@
 
         vjsPlayer.muted(!userUnmuted);
 
+        // Clear any previous manifest-ready polling
+        if (manifestReadyCheckTimer) {
+            clearTimeout(manifestReadyCheckTimer);
+            manifestReadyCheckTimer = null;
+        }
+
+        // Poll manifest-ready endpoint before setting video source
+        // This prevents the player from requesting an m3u8 that returns 503
+        var manifestPollAttempts = 0;
+        var maxManifestPollAttempts = 30; // 30 * 1000ms = 30 seconds max wait
+        var manifestPollInterval = 1000;
+
+        function pollManifestReady() {
+            if (currentQuality !== quality) return; // Quality changed during polling
+            if (sessionExpired) return;
+
+            manifestPollAttempts++;
+
+            fetch('/hls/' + channelInfo.channel_token + '/manifest-ready/' + quality + '?session=' + encodeURIComponent(sessionData.session_token), {
+                headers: { 'x-session-token': sessionData.session_token }
+            }).then(function(res) {
+                if (res.status === 403) {
+                    return res.json().then(function(data) {
+                        if (data.expired) {
+                            handleSessionExpired(data.error || 'Session expired');
+                        }
+                        return null;
+                    });
+                }
+                return res.json();
+            }).then(function(data) {
+                if (!data) return;
+                if (currentQuality !== quality) return;
+
+                if (data.ready) {
+                    // Manifest is ready — now set the source
+                    setVideoSource(quality);
+                } else if (manifestPollAttempts < maxManifestPollAttempts) {
+                    showLoading('Starting ' + quality.toUpperCase() + ' stream... (' + manifestPollAttempts + 's)');
+                    manifestReadyCheckTimer = setTimeout(pollManifestReady, manifestPollInterval);
+                } else {
+                    // Timeout — try setting source anyway, it might work now
+                    console.warn('Manifest ready timeout, attempting to play anyway');
+                    setVideoSource(quality);
+                }
+            }).catch(function() {
+                // Network error — try setting source anyway
+                if (manifestPollAttempts < 3) {
+                    manifestReadyCheckTimer = setTimeout(pollManifestReady, manifestPollInterval);
+                } else {
+                    setVideoSource(quality);
+                }
+            });
+        }
+
+        pollManifestReady();
+    }
+
+    function setVideoSource(quality) {
         var hlsUrl = getHlsUrl(quality);
 
         vjsPlayer.src({
@@ -558,7 +631,12 @@
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
         }
+        if (manifestReadyCheckTimer) {
+            clearTimeout(manifestReadyCheckTimer);
+            manifestReadyCheckTimer = null;
+        }
         reconnectBackoff = 2000;
+        reconnectAttempts = 0;
 
         if (vjsPlayer) {
             vjsPlayer.reset();
@@ -597,9 +675,24 @@
         }
     });
 
-    function scheduleReconnect() {
+    function scheduleReconnect(overrideDelay) {
         if (reconnectTimer) return;
         if (sessionExpired) return;
+
+        reconnectAttempts++;
+        if (reconnectAttempts > maxReconnectAttempts) {
+            console.error('Max reconnect attempts reached (' + maxReconnectAttempts + ')');
+            destroyPlayer();
+            showError('Connection Failed', 'Unable to connect to the stream after ' + maxReconnectAttempts + ' attempts. The stream may be offline.');
+            errorBtn.textContent = 'Try Again';
+            errorBtn.onclick = function() {
+                reconnectAttempts = 0;
+                reconnectBackoff = 2000;
+                errorOverlay.classList.add('hidden');
+                startStream(currentQuality || getAvailableQualities()[0]?.label);
+            };
+            return;
+        }
 
         checkSessionExpired().then(function(expired) {
             if (expired) {
@@ -607,13 +700,14 @@
                 return;
             }
 
+            var delay = overrideDelay || reconnectBackoff;
             softResetPlayer();
-            showLoading('Reconnecting...');
+            showLoading('Reconnecting... (attempt ' + reconnectAttempts + '/' + maxReconnectAttempts + ')');
             reconnectTimer = setTimeout(function() {
                 reconnectTimer = null;
                 vjsPlayer.reset();
                 startStream(currentQuality);
-            }, reconnectBackoff);
+            }, delay);
 
             reconnectBackoff = Math.min(reconnectBackoff * 1.3, maxReconnectBackoff);
         });

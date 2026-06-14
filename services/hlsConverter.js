@@ -124,10 +124,7 @@ class HlsConverter {
                 const fullPath = path.join(this.tempDir, entry);
                 try {
                     if (fs.statSync(fullPath).isDirectory()) {
-                        for (const f of fs.readdirSync(fullPath)) {
-                            fs.unlinkSync(path.join(fullPath, f));
-                        }
-                        fs.rmdirSync(fullPath);
+                        fs.rmSync(fullPath, { recursive: true, force: true });
                     } else {
                         fs.unlinkSync(fullPath);
                     }
@@ -332,8 +329,12 @@ class HlsConverter {
 
         proc.stderr.on('data', (data) => {
             const msg = data.toString().trim();
-            if (msg && (msg.includes('Error') || msg.includes('error') || msg.includes('Invalid') || msg.includes('failed') || msg.includes('Connection') || msg.includes('timeout') || !msg.startsWith('frame=') && !msg.startsWith('  lib'))) {
-                console.log('HlsConverter ffmpeg:', msg);
+            if (!msg) return;
+            // Skip noisy progress/library info lines
+            if (msg.startsWith('frame=') || msg.startsWith('  lib') || msg.startsWith('  configuration:') || msg.startsWith('  built with') || msg.startsWith('size=')) return;
+            // Log meaningful messages: errors, warnings, connection issues
+            if (msg.includes('Error') || msg.includes('error') || msg.includes('Invalid') || msg.includes('failed') || msg.includes('Connection') || msg.includes('timeout') || msg.includes('403') || msg.includes('404') || msg.includes('refused') || msg.includes('Opening') || msg.includes('Output') || msg.includes('Input') || msg.includes('Stream ') || msg.includes('Duration')) {
+                console.log('HlsConverter ffmpeg:', msg.substring(0, 500));
             }
         });
 
@@ -424,11 +425,13 @@ class HlsConverter {
             }
             if (!state.manifestReady) {
                 state.manifestReady = true;
+                state.retryCount = 0; // Reset retry count on successful manifest
                 if (state.startupTimer) {
                     clearTimeout(state.startupTimer);
                     state.startupTimer = null;
                 }
                 this._scheduleIdleCheck(key);
+                console.log('HlsConverter: manifest ready for', key);
             }
             return content;
         } catch (e) {
@@ -556,18 +559,25 @@ class HlsConverter {
     }
 
     stopAllForChannel(channelId) {
+        // Collect keys first to avoid modifying Map during iteration
+        const keysToStop = [];
         for (const key of this.activeConversions.keys()) {
             if (key.startsWith(channelId + ':')) {
-                const state = this.activeConversions.get(key);
-                this.stopConversion(state.channelId, state.qualityLabel);
+                keysToStop.push(key);
             }
+        }
+        for (const key of keysToStop) {
+            const state = this.activeConversions.get(key);
+            if (state) this.stopConversion(state.channelId, state.qualityLabel);
         }
     }
 
     stopAll() {
-        for (const key of this.activeConversions.keys()) {
+        // Collect keys first to avoid modifying Map during iteration
+        const keysToStop = Array.from(this.activeConversions.keys());
+        for (const key of keysToStop) {
             const state = this.activeConversions.get(key);
-            this.stopConversion(state.channelId, state.qualityLabel);
+            if (state) this.stopConversion(state.channelId, state.qualityLabel);
         }
     }
 }

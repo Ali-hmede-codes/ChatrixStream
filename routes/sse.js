@@ -24,14 +24,14 @@ module.exports = function(db) {
             'X-Accel-Buffering': 'no'
         });
 
-        res.write(`event: connected\ndata: {"channel_token":"${session.channel_token}","channel_name":"${session.channel_name}","expires_at":"${session.expires_at}"}\n\n`);
+        res.write('event: connected\ndata: ' + JSON.stringify({ channel_token: session.channel_token, channel_name: session.channel_name, expires_at: session.expires_at }) + '\n\n');
 
         let checkTimer = null;
 
         function checkSession() {
             const result = validateSession(db, sessionToken);
             if (!result.valid) {
-                res.write(`event: session_expired\ndata: {"error":"${result.error}"}\n\n`);
+                res.write('event: session_expired\ndata: ' + JSON.stringify({ error: result.error }) + '\n\n');
                 cleanup();
                 res.end();
                 return;
