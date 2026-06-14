@@ -15,6 +15,46 @@
     let sessionCheckInterval = null;
     let sessionExpired = false;
     let wasPlayingBeforeHidden = false;
+    let bandwidthEstimate = null;
+
+    function isLowBandwidth() {
+        if (bandwidthEstimate !== null) return bandwidthEstimate < 500000;
+        return navigator.connection && navigator.connection.effectiveType &&
+            ['slow-2g', '2g'].indexOf(navigator.connection.effectiveType) !== -1;
+    }
+
+    function getVhsConfig() {
+        var baseConfig = {
+            overrideNative: !isIOS() && !isSafari(),
+            enableLowInitialPlaylist: true,
+            liveSyncOnStall: true,
+            usePerformanceCues: true,
+            stallEnabled: true,
+            handlePartialData: true
+        };
+
+        if (isLowBandwidth()) {
+            baseConfig.liveSyncDurationCount = 5;
+            baseConfig.liveMaxLatencyDurationCount = 12;
+            baseConfig.maxBufferLength = 15;
+            baseConfig.maxMaxBufferLength = 30;
+            baseConfig.maxBufferSize = 3 * 1000 * 1000;
+            baseConfig.backBufferLength = 30;
+            baseConfig.experimentalBufferBasedHlsSelector = true;
+            baseConfig.experimentalLeastPixelRatioSelector = true;
+        } else {
+            baseConfig.liveSyncDurationCount = 3;
+            baseConfig.liveMaxLatencyDurationCount = 9;
+            baseConfig.maxBufferLength = 30;
+            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.maxBufferSize = 60 * 1000 * 1000;
+            baseConfig.backBufferLength = 90;
+            baseConfig.experimentalBufferBasedHlsSelector = true;
+            baseConfig.experimentalLeastPixelRatioSelector = true;
+        }
+
+        return baseConfig;
+    }
 
     const errorOverlay = document.getElementById('error-overlay');
     const errorTitle = document.getElementById('error-title');
@@ -46,6 +86,12 @@
 
     function isSafari() {
         return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    }
+
+    if (navigator.connection) {
+        navigator.connection.addEventListener('change', function() {
+            bandwidthEstimate = navigator.connection.downlink * 1000000;
+        });
     }
 
     async function init() {
@@ -114,11 +160,19 @@
 
         prewarmAllQualities();
 
-        const defaultQuality = channelInfo.qualities.sort((a, b) => a.sort_order - b.sort_order)[0];
+        var defaultQuality;
+        if (isLowBandwidth()) {
+            var lowQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
+            defaultQuality = lowQ || channelInfo.qualities.sort(function(a, b) { return a.sort_order - b.sort_order; })[0];
+        } else {
+            var highQ = channelInfo.qualities.find(function(q) { return q.label.toLowerCase().includes('high'); });
+            defaultQuality = highQ || channelInfo.qualities.sort(function(a, b) { return b.sort_order - a.sort_order; })[0];
+        }
         startStream(defaultQuality.label);
     }
 
     function initVideoJS() {
+        var vhsConfig = getVhsConfig();
         vjsPlayer = videojs(videoEl, {
             controls: false,
             autoplay: false,
@@ -129,22 +183,7 @@
             responsive: false,
             fill: true,
             html5: {
-                vhs: {
-                    overrideNative: !isIOS() && !isSafari(),
-                    enableLowInitialPlaylist: true,
-                    liveSyncDurationCount: 3,
-                    liveMaxLatencyDurationCount: 9,
-                    liveSyncOnStall: true,
-                    maxBufferLength: 30,
-                    maxMaxBufferLength: 60,
-                    maxBufferSize: 60 * 1000 * 1000,
-                    backBufferLength: 90,
-                    experimentalLeastPixelRatioSelector: true,
-                    experimentalBufferBasedHlsSelector: true,
-                    usePerformanceCues: true,
-                    stallEnabled: true,
-                    handlePartialData: true
-                },
+                vhs: vhsConfig,
                 nativeAudioDescriptions: true
             }
         });
@@ -152,6 +191,10 @@
         vjsPlayer.on('playing', function() {
             hideLoading();
             consecutiveNetworkErrors = 0;
+            var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
+            if (tech && tech.vhs && tech.vhs.bandwidth) {
+                bandwidthEstimate = tech.vhs.bandwidth;
+            }
             if (vjsPlayer.muted()) {
                 unmuteBtn.classList.remove('hidden');
             } else {

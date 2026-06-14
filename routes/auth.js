@@ -1,6 +1,27 @@
 const express = require('express');
 const { redeemInviteCode, validateSession, createSessionForChannel } = require('../services/codeGenerator');
 
+const QUALITY_PRESETS = {
+    low: { approxBitrate: '~500kbps', description: 'Low (200KB/s WiFi)' },
+    medium: { approxBitrate: '~1200kbps', description: 'Medium (1MB/s WiFi)' },
+    high: { approxBitrate: 'source', description: 'High (unlimited)' }
+};
+
+function resolvePresetInfo(qualityLabel) {
+    const lower = qualityLabel.toLowerCase().trim();
+    if (QUALITY_PRESETS[lower]) return QUALITY_PRESETS[lower];
+    for (const key of Object.keys(QUALITY_PRESETS)) {
+        if (lower.includes(key)) return QUALITY_PRESETS[key];
+    }
+    const resolutionMatch = lower.match(/(\d+)p/);
+    if (resolutionMatch) {
+        const height = parseInt(resolutionMatch[1]);
+        if (height <= 360) return QUALITY_PRESETS.low;
+        if (height <= 720) return QUALITY_PRESETS.medium;
+    }
+    return QUALITY_PRESETS.high;
+}
+
 module.exports = function(db) {
     const router = express.Router();
 
@@ -32,11 +53,15 @@ module.exports = function(db) {
         }
 
         const qualities = getQualitiesByChannel.all(result.channel_id);
+        const qualitiesWithInfo = qualities.map(q => ({
+            ...q,
+            bitrate_info: resolvePresetInfo(q.label)
+        }));
         res.json({
             session_token: result.session_token,
             channel_token: result.channel_token,
             channel_name: result.channel_name,
-            qualities,
+            qualities: qualitiesWithInfo,
             expires_at: result.expires_at
         });
     });
@@ -69,11 +94,15 @@ module.exports = function(db) {
         }
 
         const qualities = getQualitiesByChannel.all(result.channel_id);
+        const qualitiesWithInfo = qualities.map(q => ({
+            ...q,
+            bitrate_info: resolvePresetInfo(q.label)
+        }));
         res.json({
             session_token: result.session_token,
             channel_token: result.channel_token,
             channel_name: result.channel_name,
-            qualities,
+            qualities: qualitiesWithInfo,
             expires_at: result.expires_at
         });
     });
@@ -96,11 +125,15 @@ module.exports = function(db) {
         }
 
         const qualities = getQualitiesByChannel.all(result.channel_id);
+        const qualitiesWithInfo = qualities.map(q => ({
+            ...q,
+            bitrate_info: resolvePresetInfo(q.label)
+        }));
         res.json({
             valid: true,
             channel_token: result.channel_token,
             channel_name: result.channel_name,
-            qualities,
+            qualities: qualitiesWithInfo,
             expires_at: result.expires_at
         });
     });

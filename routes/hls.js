@@ -154,8 +154,7 @@ module.exports = function(db, hlsConverter) {
 
         res.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',
-            'Cache-Control': 'no-cache, no-store, no-transform, must-revalidate',
-            'Pragma': 'no-cache',
+            'Cache-Control': 'max-age=2, no-transform',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Expose-Headers': 'Content-Type, Retry-After'
         });
@@ -180,7 +179,7 @@ module.exports = function(db, hlsConverter) {
 
         res.writeHead(200, {
             'Content-Type': 'video/mp2t',
-            'Cache-Control': 'no-cache',
+            'Cache-Control': 'max-age=8',
             'Access-Control-Allow-Origin': '*'
         });
 

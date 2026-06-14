@@ -2,6 +2,57 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const QUALITY_PRESETS = {
+    low: {
+        videoCodec: 'libx264',
+        videoBitrate: '400k',
+        videoMaxRate: '500k',
+        videoBufSize: '600k',
+        videoPreset: 'ultrafast',
+        videoTune: 'zerolatency',
+        videoProfile: 'baseline',
+        videoLevel: '3.0',
+        videoResolution: '480x360',
+        audioBitrate: '48k',
+        audioChannels: '1',
+        audioRate: '44100',
+        segmentDuration: 4,
+        copyVideo: false
+    },
+    medium: {
+        videoCodec: 'libx264',
+        videoBitrate: '1000k',
+        videoMaxRate: '1200k',
+        videoBufSize: '1400k',
+        videoPreset: 'veryfast',
+        videoTune: 'zerolatency',
+        videoProfile: 'main',
+        videoLevel: '3.1',
+        videoResolution: null,
+        audioBitrate: '64k',
+        audioChannels: '2',
+        audioRate: '48000',
+        segmentDuration: 3,
+        copyVideo: false
+    },
+    high: {
+        videoCodec: 'copy',
+        videoBitrate: null,
+        videoMaxRate: null,
+        videoBufSize: null,
+        videoPreset: null,
+        videoTune: null,
+        videoProfile: null,
+        videoLevel: null,
+        videoResolution: null,
+        audioBitrate: '128k',
+        audioChannels: '2',
+        audioRate: '48000',
+        segmentDuration: 2,
+        copyVideo: true
+    }
+};
+
 class HlsConverter {
     constructor(options = {}) {
         this.activeConversions = new Map();
@@ -16,12 +67,28 @@ class HlsConverter {
         this.startupTimeout = options.startupTimeout || 60000;
         this.ffmpegPath = options.ffmpegPath || 'ffmpeg';
         this.ffmpegAvailable = false;
+        this.qualityPresets = options.qualityPresets || QUALITY_PRESETS;
 
         this._cleanTempDir();
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true });
         }
         this._checkFfmpeg();
+    }
+
+    _resolvePreset(qualityLabel) {
+        const lower = qualityLabel.toLowerCase().trim();
+        if (this.qualityPresets[lower]) return this.qualityPresets[lower];
+        for (const key of Object.keys(this.qualityPresets)) {
+            if (lower.includes(key)) return this.qualityPresets[key];
+        }
+        const resolutionMatch = lower.match(/(\d+)p/);
+        if (resolutionMatch) {
+            const height = parseInt(resolutionMatch[1]);
+            if (height <= 360) return this.qualityPresets.low;
+            if (height <= 720) return this.qualityPresets.medium;
+        }
+        return this.qualityPresets.high;
     }
 
     _cleanTempDir() {
@@ -159,12 +226,12 @@ class HlsConverter {
             state.ffmpegProcess = null;
         }
 
-        // Increment discontinuity counter on each FFmpeg restart (not first start)
         if (state.started) {
             state.discontinuityCount++;
         }
         state.started = true;
 
+        const preset = this._resolvePreset(state.qualityLabel);
         const parsedUrl = new URL(state.streamUrl);
         const args = [];
 
@@ -190,15 +257,33 @@ class HlsConverter {
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
         args.push('-i', urlWithoutCreds);
-        args.push('-c:v', 'copy');
+
+        if (preset.copyVideo) {
+            args.push('-c:v', 'copy');
+        } else {
+            args.push('-c:v', preset.videoCodec);
+            if (preset.videoPreset) args.push('-preset', preset.videoPreset);
+            if (preset.videoTune) args.push('-tune', preset.videoTune);
+            if (preset.videoProfile) args.push('-profile:v', preset.videoProfile);
+            if (preset.videoLevel) args.push('-level', preset.videoLevel);
+            if (preset.videoBitrate) args.push('-b:v', preset.videoBitrate);
+            if (preset.videoMaxRate) args.push('-maxrate', preset.videoMaxRate);
+            if (preset.videoBufSize) args.push('-bufsize', preset.videoBufSize);
+            if (preset.videoResolution) {
+                args.push('-vf', 'scale=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':force_original_aspect_ratio=decrease,pad=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':(ow-iw)/2:(oh-ih)/2');
+            }
+        }
+
         args.push('-c:a', 'aac');
         args.push('-af', 'aresample=async=50:first_pts=0');
-        args.push('-ar', '48000');
-        args.push('-ac', '2');
-        args.push('-b:a', '128k');
+        args.push('-ar', String(preset.audioRate));
+        args.push('-ac', String(preset.audioChannels));
+        args.push('-b:a', preset.audioBitrate);
         args.push('-mpegts_flags', '+resend_headers');
         args.push('-f', 'hls');
-        args.push('-hls_time', String(this.segmentDuration));
+
+        const segDuration = preset.segmentDuration || this.segmentDuration;
+        args.push('-hls_time', String(segDuration));
         args.push('-hls_list_size', String(this.listSize));
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist');
 
@@ -208,7 +293,7 @@ class HlsConverter {
         args.push('-hls_segment_filename', segmentPattern);
         args.push(manifestPath);
 
-        console.log('HlsConverter: starting ffmpeg for', key);
+        console.log('HlsConverter: starting ffmpeg for', key, 'preset:', state.qualityLabel.toLowerCase().trim() || 'high', 'video:', preset.copyVideo ? 'copy' : preset.videoBitrate, 'audio:', preset.audioBitrate);
 
         const proc = spawn(this.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         state.ffmpegProcess = proc;
