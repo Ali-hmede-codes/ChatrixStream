@@ -9,6 +9,7 @@ const QUALITY_PRESETS = {
 };
 
 function resolvePresetInfo(qualityLabel) {
+    if (!qualityLabel) return QUALITY_PRESETS.high;
     const lower = qualityLabel.toLowerCase().trim();
     if (QUALITY_PRESETS[lower]) return QUALITY_PRESETS[lower];
     for (const key of Object.keys(QUALITY_PRESETS)) {
@@ -24,8 +25,9 @@ function resolvePresetInfo(qualityLabel) {
 }
 
 function deriveBitrateInfo(qualityRow) {
-    const base = resolvePresetInfo(qualityRow.quality_label);
-    const presetKey = (qualityRow.preset_key || qualityRow.quality_label).toLowerCase().trim();
+    const base = resolvePresetInfo(qualityRow.label || qualityRow.quality_label);
+    const ql = qualityRow.label || qualityRow.quality_label || '';
+    const presetKey = (qualityRow.preset_key || ql).toLowerCase().trim();
     const presetBase = QUALITY_PRESETS[presetKey] || base;
 
     let approxBitrate = presetBase.approxBitrate;
@@ -39,9 +41,9 @@ function deriveBitrateInfo(qualityRow) {
         description = 'Source (no transcoding)';
     }
     if (qualityRow.video_resolution) {
-        description = qualityRow.quality_label.toUpperCase() + ' (' + qualityRow.video_resolution + ')';
+        description = ql.toUpperCase() + ' (' + qualityRow.video_resolution + ')';
     } else if (qualityRow.video_codec !== 'copy' && qualityRow.video_bitrate) {
-        description = qualityRow.quality_label.toUpperCase() + ' (~' + qualityRow.video_bitrate + ')';
+        description = ql.toUpperCase() + ' (~' + qualityRow.video_bitrate + ')';
     }
 
     return { approxBitrate, description };
