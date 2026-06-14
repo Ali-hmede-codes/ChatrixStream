@@ -133,27 +133,42 @@ class HlsConverter {
         }
     }
 
-    _checkFfmpeg() {
+    _checkFfmpeg(pathToTest = this.ffmpegPath) {
         try {
-            const proc = spawn(this.ffmpegPath, ['-version']);
-            let outputReceived = false;
-            proc.on('error', () => {
-                this.ffmpegAvailable = false;
-                console.warn('HlsConverter: ffmpeg not found at path:', this.ffmpegPath, '. iOS Safari HLS playback will not work.');
+            const proc = spawn(pathToTest, ['-version']);
+            let errorOccurred = false;
+
+            proc.on('error', (err) => {
+                errorOccurred = true;
+                console.warn(`HlsConverter: ffmpeg check failed at path "${pathToTest}":`, err.message);
+                this._handleFfmpegFailure(pathToTest);
             });
-            proc.stdout.on('data', () => { outputReceived = true; });
-            proc.stderr.on('data', () => { outputReceived = true; });
+
             proc.on('close', (code) => {
-                this.ffmpegAvailable = (code === 0);
-                if (this.ffmpegAvailable) {
+                if (errorOccurred) return;
+
+                if (code === 0) {
+                    this.ffmpegAvailable = true;
+                    this.ffmpegPath = pathToTest;
                     console.log('HlsConverter: ffmpeg is available at', this.ffmpegPath);
                 } else {
-                    console.warn('HlsConverter: ffmpeg not available (exit code', code, '). iOS Safari HLS playback will not work.');
+                    console.warn(`HlsConverter: ffmpeg at "${pathToTest}" exited with code ${code}.`);
+                    this._handleFfmpegFailure(pathToTest);
                 }
             });
         } catch (e) {
+            console.warn(`HlsConverter: spawn threw error for "${pathToTest}":`, e.message);
+            this._handleFfmpegFailure(pathToTest);
+        }
+    }
+
+    _handleFfmpegFailure(failedPath) {
+        if (failedPath !== 'ffmpeg') {
+            console.log('HlsConverter: Retrying ffmpeg check with system default "ffmpeg"...');
+            this._checkFfmpeg('ffmpeg');
+        } else {
             this.ffmpegAvailable = false;
-            console.warn('HlsConverter: ffmpeg check failed:', e.message);
+            console.warn('HlsConverter: ffmpeg is not available. iOS Safari HLS playback will not work.');
         }
     }
 
