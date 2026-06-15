@@ -230,12 +230,15 @@ module.exports = function(db, hlsConverter) {
         const rewritten = hlsConverter.rewriteManifest(
             manifest,
             validation.sessionToken,
-            hlsConverter.getDiscontinuityCount(validation.channel.id, validation.quality.quality_label)
+            hlsConverter.getDiscontinuityCount(validation.channel.id, validation.quality.quality_label),
+            hlsConverter.getStreamSessionId(validation.channel.id, validation.quality.quality_label)
         );
 
         res.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',
-            'Cache-Control': 'max-age=1, no-transform',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Expose-Headers': 'Content-Type, Retry-After'
         });
@@ -260,7 +263,9 @@ module.exports = function(db, hlsConverter) {
 
         res.writeHead(200, {
             'Content-Type': 'video/mp2t',
-            'Cache-Control': 'max-age=30, public, no-transform',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
             'Access-Control-Allow-Origin': '*',
             'X-Accel-Buffering': 'no',
             'Connection': 'keep-alive'

@@ -217,6 +217,7 @@ class HlsConverter {
             retryCount: 0,
             manifestReady: false,
             discontinuityCount: 0,
+            streamSessionId: Date.now(),
             started: false
         };
 
@@ -478,7 +479,7 @@ class HlsConverter {
         });
     }
 
-    rewriteManifest(manifestContent, sessionToken, discontinuityCount) {
+    rewriteManifest(manifestContent, sessionToken, discontinuityCount, streamSessionId) {
         let hasPlaylistType = false;
         let hasIndependentSegments = false;
         let hasDiscontinuitySequence = false;
@@ -499,7 +500,7 @@ class HlsConverter {
                 return null;
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
-                return line + '?session=' + sessionToken;
+                return line + '?session=' + sessionToken + '&_d=' + (discontinuityCount || 0) + '&_s=' + (streamSessionId || 0);
             }
             return line;
         }).filter(line => line !== null);
@@ -532,6 +533,12 @@ class HlsConverter {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
         return state ? state.discontinuityCount : 0;
+    }
+
+    getStreamSessionId(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        return state ? state.streamSessionId : 0;
     }
 
     getSegmentPath(channelId, qualityLabel, segmentName) {
