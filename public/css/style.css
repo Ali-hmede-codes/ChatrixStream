@@ -142,6 +142,8 @@ body {
 
 /* Allow clicks to pass through video.js overlay divs to the actual video element */
 .video-js .vjs-tech {
+    width: 100% !important;
+    height: 100% !important;
     object-fit: contain !important;
 }
 
