@@ -501,12 +501,12 @@ video::-webkit-media-controls-fullscreen-button {
 
 /* Watermark Text Styles */
 .watermark-text {
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 1.1rem;
-    font-weight: 700;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.85);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.15rem;
+    font-weight: 900;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
     letter-spacing: 0.5px;
-    font-family: inherit;
+    font-family: 'Cairo', sans-serif;
 }
 
 /* Watermark Logo Image Styles */
