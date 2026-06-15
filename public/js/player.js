@@ -616,14 +616,22 @@
         hideLoading();
     }
 
-    tapToPlayOverlay.addEventListener('click', function() {
+    function handleTapToPlay(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        if (tapToPlayOverlay.classList.contains('hidden')) return;
         tapToPlayOverlay.classList.add('hidden');
 
         vjsPlayer.muted(true);
         unmuteBtn.classList.remove('hidden');
 
         vjsPlayer.play().catch(function() {});
-    });
+    }
+
+    tapToPlayOverlay.addEventListener('click', handleTapToPlay);
+    tapToPlayOverlay.addEventListener('touchend', handleTapToPlay);
 
     function destroyPlayer() {
         cancelBufferingDebounce();
@@ -667,7 +675,16 @@
         });
     }
 
-    unmuteBtn.addEventListener('click', tryUnmute);
+    function handleUnmute(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        tryUnmute();
+    }
+
+    unmuteBtn.addEventListener('click', handleUnmute);
+    unmuteBtn.addEventListener('touchend', handleUnmute);
 
     videoContainer.addEventListener('click', function(e) {
         if (e.target === videoEl && vjsPlayer.muted()) {
