@@ -97,6 +97,9 @@ module.exports = function(db, streamManager, hlsConverter) {
         // link_expires_at is sent explicitly: null means clear it, a string means set it
         // Only use COALESCE for fields that are truly optional (not sent = keep old value)
         const previousChannel = getChannelById.get(id);
+        if (!previousChannel) return res.status(404).json({ error: 'Channel not found' });
+
+        const previousLinkExpiresAt = previousChannel.link_expires_at;
         const effectiveLinkExpiresAt = (link_expires_at !== undefined)
             ? (link_expires_at ? normalizeToUTC(link_expires_at) : null)   // Normalize to UTC; null/empty -> null (clear)
             : previousChannel.link_expires_at;  // not sent -> keep old value
@@ -109,23 +112,73 @@ module.exports = function(db, streamManager, hlsConverter) {
 
         updateChannel.run(name || null, effectiveCodeRequired, effectiveTtl, effectiveLinkExpiresAt, id);
 
-        // If link_expires_at was set/updated, expire any sessions that outlive it
-        // and kill active streams so users can't keep watching
+        const channel = getChannelById.get(id);
+        const expiryChanged = effectiveLinkExpiresAt !== previousLinkExpiresAt;
+
+        if (expiryChanged) {
+            const propagateTx = db.transaction(() => {
+                // 1. Fetch all invite codes for this channel
+                const codes = db.prepare('SELECT * FROM invite_codes WHERE channel_id = ?').all(id);
+                for (const code of codes) {
+                    let uncappedExpiresAt;
+                    if (channel.code_ttl_hours && channel.code_ttl_hours > 0) {
+                        let createdAtStr = code.created_at;
+                        if (!createdAtStr.endsWith('Z') && !createdAtStr.includes('+')) {
+                            createdAtStr = createdAtStr.replace(' ', 'T') + 'Z';
+                        }
+                        const createdTime = new Date(createdAtStr).getTime();
+                        uncappedExpiresAt = new Date(createdTime + channel.code_ttl_hours * 3600 * 1000).toISOString();
+                    } else {
+                        uncappedExpiresAt = '9999-12-31T23:59:59.999Z';
+                    }
+
+                    let codeNewExpiresAt = uncappedExpiresAt;
+                    if (effectiveLinkExpiresAt) {
+                        codeNewExpiresAt = (new Date(effectiveLinkExpiresAt) < new Date(uncappedExpiresAt))
+                            ? effectiveLinkExpiresAt
+                            : uncappedExpiresAt;
+                    }
+
+                    // Update invite code expiration
+                    db.prepare('UPDATE invite_codes SET expires_at = ? WHERE id = ?').run(codeNewExpiresAt, code.id);
+
+                    // Update sessions associated with this invite code
+                    db.prepare('UPDATE sessions SET expires_at = ? WHERE invite_code_id = ?').run(codeNewExpiresAt, code.id);
+                }
+
+                // 2. Fetch and update direct/codeless sessions (invite_code_id IS NULL)
+                const directSessions = db.prepare('SELECT * FROM sessions WHERE channel_id = ? AND invite_code_id IS NULL').all(id);
+                for (const session of directSessions) {
+                    let createdAtStr = session.created_at;
+                    if (!createdAtStr.endsWith('Z') && !createdAtStr.includes('+')) {
+                        createdAtStr = createdAtStr.replace(' ', 'T') + 'Z';
+                    }
+                    const createdTime = new Date(createdAtStr).getTime();
+                    const uncappedSessionExpiry = new Date(createdTime + 24 * 3600 * 1000).toISOString();
+
+                    let sessionNewExpiresAt = uncappedSessionExpiry;
+                    if (effectiveLinkExpiresAt) {
+                        sessionNewExpiresAt = (new Date(effectiveLinkExpiresAt) < new Date(uncappedSessionExpiry))
+                            ? effectiveLinkExpiresAt
+                            : uncappedSessionExpiry;
+                    }
+
+                    db.prepare('UPDATE sessions SET expires_at = ? WHERE id = ?').run(sessionNewExpiresAt, session.id);
+                }
+            });
+
+            propagateTx();
+        }
+
+        // If link_expires_at was set/updated to a value that is already in the past, kill active streams
         if (effectiveLinkExpiresAt) {
-            const now = new Date().toISOString();
             const isExpired = new Date(effectiveLinkExpiresAt) <= new Date();
-
-            // Expire sessions that would outlive the new link expiry
-            expireSessionsForChannel.run(effectiveLinkExpiresAt, parseInt(id), effectiveLinkExpiresAt);
-
-            // If the new expiry is already in the past, kill all streams immediately
             if (isExpired) {
                 streamManager.stopAllStreamsForChannel(parseInt(id));
                 if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
             }
         }
 
-        const channel = getChannelById.get(id);
         res.json(channel);
     });
 

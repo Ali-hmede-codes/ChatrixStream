@@ -387,6 +387,7 @@
 
     function isExpired(dateStr) {
         if (!dateStr) return false;
+        if (new Date(dateStr).getFullYear() >= 9000) return false;
         return new Date(dateStr) <= new Date();
     }
 
@@ -631,6 +632,7 @@
         try {
             var d = new Date(dateStr);
             if (isNaN(d.getTime())) return dateStr;
+            if (d.getFullYear() >= 9000) return 'Never';
             // Show date in user's local timezone with timezone abbreviation
             return d.toLocaleString(undefined, {
                 year: 'numeric',
