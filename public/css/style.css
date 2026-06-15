@@ -471,3 +471,66 @@ video::-webkit-media-controls-fullscreen-button {
     0%, 100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.3), 0 0 10px rgba(108, 92, 231, 0.2); }
     50% { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.4), 0 0 18px rgba(108, 92, 231, 0.4); }
 }
+
+/* Watermark Overlay (Logo or Text) */
+#player-watermark {
+    position: absolute;
+    z-index: 12;
+    pointer-events: none; /* Make clicks pass through to the player */
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
+}
+
+/* Positioning in corners */
+.watermark-top-right {
+    top: 20px;
+    right: 20px;
+}
+.watermark-top-left {
+    top: 20px;
+    left: 20px;
+}
+.watermark-bottom-right {
+    bottom: 80px; /* Offset to clear the bottom control bar */
+    right: 20px;
+}
+.watermark-bottom-left {
+    bottom: 80px;
+    left: 20px;
+}
+
+/* Watermark Text Styles */
+.watermark-text {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.85);
+    letter-spacing: 0.5px;
+    font-family: inherit;
+}
+
+/* Watermark Logo Image Styles */
+.watermark-logo {
+    max-width: 120px;
+    max-height: 50px;
+    object-fit: contain;
+    filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+/* Responsive adjust for mobile */
+@media (max-width: 600px) {
+    #player-watermark {
+        opacity: 0.5;
+    }
+    .watermark-text {
+        font-size: 0.85rem;
+    }
+    .watermark-logo {
+        max-width: 80px;
+        max-height: 35px;
+    }
+    .watermark-bottom-right, .watermark-bottom-left {
+        bottom: 50px; /* Lower on mobile since quality-bar is thinner/differently positioned */
+    }
+}
+
