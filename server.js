@@ -27,7 +27,7 @@ const streamManager = new StreamManager({
 const hlsConverter = new HlsConverter({
     tempDir: process.env.HLS_TEMP_DIR || undefined,
     segmentDuration: parseInt(process.env.HLS_SEGMENT_DURATION) || 2,
-    listSize: parseInt(process.env.HLS_LIST_SIZE) || 8,
+    listSize: parseInt(process.env.HLS_LIST_SIZE) || 5,
     idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
     idleGrace: parseInt(process.env.HLS_IDLE_GRACE_MS) || 5000,
     restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,

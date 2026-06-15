@@ -2,6 +2,35 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Simple LRU cache for segment data (in-memory)
+class SegmentLRU {
+    constructor(maxSize) {
+        this.maxSize = maxSize;
+        this.cache = new Map();
+    }
+    get(name) {
+        const entry = this.cache.get(name);
+        if (!entry) return null;
+        // Move to end (most recently used)
+        this.cache.delete(name);
+        this.cache.set(name, entry);
+        return entry;
+    }
+    set(name, data) {
+        if (this.cache.has(name)) {
+            this.cache.delete(name);
+        } else if (this.cache.size >= this.maxSize) {
+            // Evict oldest (first entry)
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        this.cache.set(name, data);
+    }
+    clear() {
+        this.cache.clear();
+    }
+}
+
 const QUALITY_PRESETS = {
     low: {
         videoCodec: 'libx264',
@@ -58,7 +87,7 @@ class HlsConverter {
         this.activeConversions = new Map();
         this.tempDir = options.tempDir || path.join(process.cwd(), 'tmp', 'hls');
         this.segmentDuration = options.segmentDuration || 2;
-        this.listSize = options.listSize || 25;
+        this.listSize = options.listSize || 5;
         this.idleTimeout = options.idleTimeout || 30000;
         this.idleGrace = options.idleGrace || 5000;
         this.restartDelay = options.restartDelay || 3000;
@@ -219,7 +248,11 @@ class HlsConverter {
             discontinuityCount: 0,
             streamSessionId: Date.now(),
             startNumber: 0,
-            started: false
+            started: false,
+            // In-memory caches to avoid disk I/O per viewer
+            cachedManifest: null,
+            cachedManifestTime: 0,
+            segmentCache: new SegmentLRU(6)
         };
 
         this.activeConversions.set(key, state);
@@ -374,9 +407,9 @@ class HlsConverter {
         // Removed split_by_time: it forced splits at exact time boundaries regardless of keyframes,
         // producing segments that don't start with I-frames and causing decode stalls
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+independent_segments+temp_file');
-        // Keep 4 extra segments on disk after they leave the playlist, so slow players
+        // Keep 6 extra segments on disk after they leave the playlist, so slow players
         // don't get 404s for segments they're still trying to download
-        args.push('-hls_delete_threshold', '4');
+        args.push('-hls_delete_threshold', '6');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');
@@ -476,6 +509,12 @@ class HlsConverter {
 
         this._recordAccess(key);
 
+        // Serve from in-memory cache if fresh (updated every 500ms max)
+        const now = Date.now();
+        if (state.cachedManifest && state.manifestReady && (now - state.cachedManifestTime) < 500) {
+            return state.cachedManifest;
+        }
+
         const manifestPath = path.join(state.dir, 'index.m3u8');
         if (!fs.existsSync(manifestPath)) {
             return null;
@@ -503,6 +542,9 @@ class HlsConverter {
                 this._scheduleIdleCheck(key);
                 console.log('HlsConverter: manifest ready for', key);
             }
+            // Update in-memory cache
+            state.cachedManifest = content;
+            state.cachedManifestTime = now;
             return content;
         } catch (e) {
             return null;
@@ -614,6 +656,35 @@ class HlsConverter {
         return filePath;
     }
 
+    /**
+     * Get segment data from in-memory cache, or read from disk and cache it.
+     * Returns { data: Buffer, size: number } or null if not found.
+     */
+    getSegmentData(channelId, qualityLabel, segmentName) {
+        if (!segmentName.match(/^seq_\d+\.ts$/)) return null;
+
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        if (!state) return null;
+
+        this._recordAccess(key);
+
+        // Check in-memory cache first
+        const cached = state.segmentCache.get(segmentName);
+        if (cached) return cached;
+
+        // Read from disk and cache
+        const filePath = path.join(state.dir, segmentName);
+        try {
+            const data = fs.readFileSync(filePath);
+            const entry = { data, size: data.length };
+            state.segmentCache.set(segmentName, entry);
+            return entry;
+        } catch (e) {
+            return null;
+        }
+    }
+
     stopConversion(channelId, qualityLabel) {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
@@ -626,6 +697,10 @@ class HlsConverter {
             try { state.ffmpegProcess.kill(); } catch (e) { /* ignore */ }
             state.ffmpegProcess = null;
         }
+
+        // Clear in-memory caches
+        state.cachedManifest = null;
+        state.segmentCache.clear();
 
         if (fs.existsSync(state.dir)) {
             for (const f of fs.readdirSync(state.dir)) {

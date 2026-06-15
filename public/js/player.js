@@ -25,15 +25,16 @@
     let BUFFERING_THRESHOLD_MS = 15000;
     let stallCount = 0;
     let lastStallTime = null;
+    let stallTimestamps = [];
     let bandwidthUpdateInterval = null;
     let maxReconnectAttempts = 10;
     let reconnectAttempts = 0;
     let manifestReadyCheckTimer = null;
     let liveEdgeTrackingInterval = null;
     let isCatchingUp = false;
-    let LIVE_EDGE_SOFT_THRESHOLD = 6;
-    let LIVE_EDGE_HARD_THRESHOLD = 15;
-    let CATCHUP_PLAYBACK_RATE = 1.05;
+    let LIVE_EDGE_SOFT_THRESHOLD = 3;
+    let LIVE_EDGE_HARD_THRESHOLD = 10;
+    let CATCHUP_PLAYBACK_RATE = 1.08;
     let NORMAL_PLAYBACK_RATE = 1.0;
 
     function trackBandwidth() {
@@ -67,6 +68,58 @@
         if (bandwidthEstimate !== null) return bandwidthEstimate < 400000;
         return navigator.connection && navigator.connection.effectiveType &&
             ['slow-2g', '2g'].indexOf(navigator.connection.effectiveType) !== -1;
+    }
+
+    function isCellularConnection() {
+        if (navigator.connection) {
+            if (navigator.connection.type === 'cellular') {
+                return true;
+            }
+            if (['slow-2g', '2g', '3g'].indexOf(navigator.connection.effectiveType) !== -1) {
+                return true;
+            }
+        }
+        var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                       (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+        return isMobile;
+    }
+
+    function getRecentStallCount() {
+        var now = Date.now();
+        stallTimestamps = stallTimestamps.filter(function(ts) {
+            return now - ts < 60000;
+        });
+        return stallTimestamps.length;
+    }
+
+    function isCellularOrStruggling() {
+        if (isCellularConnection()) {
+            return true;
+        }
+        if (getRecentStallCount() >= 2 || autoDowngradeDisabled) {
+            return true;
+        }
+        return false;
+    }
+
+    function updateLiveEdgeThresholds() {
+        if (isVeryLowBandwidth()) {
+            LIVE_EDGE_SOFT_THRESHOLD = 12;
+            LIVE_EDGE_HARD_THRESHOLD = 30;
+            CATCHUP_PLAYBACK_RATE = 1.03;
+        } else if (isLowBandwidth() || isCellularOrStruggling()) {
+            LIVE_EDGE_SOFT_THRESHOLD = 8;
+            LIVE_EDGE_HARD_THRESHOLD = 20;
+            CATCHUP_PLAYBACK_RATE = 1.05;
+        } else {
+            LIVE_EDGE_SOFT_THRESHOLD = 3;
+            LIVE_EDGE_HARD_THRESHOLD = 10;
+            CATCHUP_PLAYBACK_RATE = 1.08;
+        }
+
+        if (vjsPlayer && isCatchingUp) {
+            vjsPlayer.playbackRate(CATCHUP_PLAYBACK_RATE);
+        }
     }
 
     function getAvailableQualities() {
@@ -104,29 +157,32 @@
         };
 
         if (isVeryLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 6;
-            baseConfig.liveMaxLatencyDurationCount = 20;
+            baseConfig.liveSyncDurationCount = 5;
+            baseConfig.liveMaxLatencyDurationCount = 15;
             baseConfig.maxBufferLength = 60;
             baseConfig.maxMaxBufferLength = 120;
             baseConfig.highBufferLength = 60;
             baseConfig.maxBufferSize = 5 * 1000 * 1000;
             baseConfig.backBufferLength = 30;
-        } else if (isLowBandwidth()) {
+            baseConfig.liveBackBufferLength = 30;
+        } else if (isLowBandwidth() || isCellularConnection()) {
             baseConfig.liveSyncDurationCount = 5;
-            baseConfig.liveMaxLatencyDurationCount = 15;
+            baseConfig.liveMaxLatencyDurationCount = 12;
             baseConfig.maxBufferLength = 45;
             baseConfig.maxMaxBufferLength = 90;
             baseConfig.highBufferLength = 45;
             baseConfig.maxBufferSize = 10 * 1000 * 1000;
-            baseConfig.backBufferLength = 60;
+            baseConfig.backBufferLength = 30;
+            baseConfig.liveBackBufferLength = 30;
         } else {
-            baseConfig.liveSyncDurationCount = 4;
-            baseConfig.liveMaxLatencyDurationCount = 12;
+            baseConfig.liveSyncDurationCount = 3;
+            baseConfig.liveMaxLatencyDurationCount = 8;
             baseConfig.maxBufferLength = 30;
             baseConfig.maxMaxBufferLength = 60;
             baseConfig.highBufferLength = 30;
             baseConfig.maxBufferSize = 60 * 1000 * 1000;
-            baseConfig.backBufferLength = 90;
+            baseConfig.backBufferLength = 30;
+            baseConfig.liveBackBufferLength = 30;
         }
 
         return baseConfig;
@@ -167,6 +223,7 @@
     if (navigator.connection) {
         navigator.connection.addEventListener('change', function() {
             bandwidthEstimate = navigator.connection.downlink * 1000000;
+            updateLiveEdgeThresholds();
         });
     }
 
@@ -232,6 +289,7 @@
         }
 
         initVideoJS();
+        updateLiveEdgeThresholds();
         buildQualityButtons(channelInfo.qualities);
         connectSSE();
         startSessionCheck();
@@ -242,7 +300,7 @@
         if (isVeryLowBandwidth()) {
             var lowQ = qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
             defaultQuality = lowQ || sorted[0];
-        } else if (isLowBandwidth()) {
+        } else if (isLowBandwidth() || isCellularConnection()) {
             var medQ = qualities.find(function(q) { return q.label.toLowerCase().includes('medium'); });
             var lowQ2 = qualities.find(function(q) { return q.label.toLowerCase().includes('low'); });
             defaultQuality = medQ || lowQ2 || sorted[0];
@@ -315,8 +373,10 @@
             if (tech && tech.vhs && tech.vhs.bandwidth) {
                 bandwidthEstimate = tech.vhs.bandwidth;
             }
+            updateLiveEdgeThresholds();
             trackBandwidth();
             startLiveEdgeTracking();
+            startBufferHealthMonitor();
             if (vjsPlayer.muted()) {
                 unmuteBtn.classList.remove('hidden');
             } else {
@@ -339,7 +399,10 @@
         vjsPlayer.on('waiting', function() {
             if (!bufferingStartTime) bufferingStartTime = Date.now();
             stallCount++;
-            lastStallTime = Date.now();
+            var now = Date.now();
+            stallTimestamps.push(now);
+            lastStallTime = now;
+            updateLiveEdgeThresholds();
             scheduleBufferingDebounce();
         });
 
@@ -707,7 +770,50 @@
                     vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
                 }
             }
-        }, 3000);
+        }, 1500);
+    }
+
+    let bufferHealthInterval = null;
+
+    function startBufferHealthMonitor() {
+        if (bufferHealthInterval) return;
+        bufferHealthInterval = setInterval(function() {
+            if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
+
+            var buffered = vjsPlayer.buffered();
+            if (!buffered || buffered.length === 0) return;
+
+            var currentTime = vjsPlayer.currentTime();
+            var bufferEnd = buffered.end(buffered.length - 1);
+            var bufferAhead = bufferEnd - currentTime;
+
+            // If buffer ahead is dangerously low (< 1 second) while playing,
+            // proactively seek to live edge to prevent an imminent stall.
+            // On low-bandwidth, cellular, or struggling connections, seeking will clear the small buffer and guarantee a stall.
+            if (bufferAhead >= 0 && bufferAhead < 1 && !isCatchingUp) {
+                if (isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling()) {
+                    // Do not seek. Allow the player to buffer naturally and/or auto-downgrade quality.
+                    return;
+                }
+                var seekable = vjsPlayer.seekable();
+                if (seekable && seekable.length > 0) {
+                    var seekEnd = seekable.end(seekable.length - 1);
+                    var behindLive = seekEnd - currentTime;
+                    // Only seek if we're actually behind live edge
+                    if (behindLive > 3) {
+                        console.log('Buffer health: low buffer (' + bufferAhead.toFixed(1) + 's), seeking to live edge (' + behindLive.toFixed(1) + 's behind)');
+                        vjsPlayer.currentTime(seekEnd - 2);
+                    }
+                }
+            }
+        }, 2000);
+    }
+
+    function stopBufferHealthMonitor() {
+        if (bufferHealthInterval) {
+            clearInterval(bufferHealthInterval);
+            bufferHealthInterval = null;
+        }
     }
 
     function stopLiveEdgeTracking() {
@@ -716,6 +822,7 @@
             liveEdgeTrackingInterval = null;
         }
         isCatchingUp = false;
+        stopBufferHealthMonitor();
     }
 
     function tryUnmute() {

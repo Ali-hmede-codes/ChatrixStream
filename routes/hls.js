@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const crypto = require('crypto');
 const { validateSession } = require('../services/codeGenerator');
 
 const SESSION_CACHE_TTL = 30000;
@@ -272,46 +273,47 @@ module.exports = function(db, hlsConverter) {
             return res.end(JSON.stringify({ error: validation.error, expired: true }));
         }
 
-        let segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
+        const channelId = validation.channel.id;
+        const qualityLabel = validation.quality.quality_label;
+        const segmentName = req.params.segmentName;
 
-        // If segment not found, wait briefly and retry once.
+        // Try to get segment data from in-memory cache first, then disk
+        let segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
+
+        // If segment not found, wait and retry up to 2 times.
         // Handles the race between the manifest listing a new segment
         // and the segment file appearing on disk (especially with temp_file flag).
-        if (!segmentPath) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-            segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
+        if (!segmentData) {
+            for (let retry = 0; retry < 2; retry++) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
+                if (segmentData) break;
+            }
         }
 
-        if (!segmentPath) {
+        if (!segmentData) {
             return res.status(404).end();
         }
 
-        let stat;
-        try {
-            stat = fs.statSync(segmentPath);
-        } catch (e) {
-            return res.status(404).end();
+        // Generate ETag from segment content hash for HTTP caching
+        const etag = '"' + crypto.createHash('md5').update(segmentData.data).digest('hex') + '"';
+
+        // Check If-None-Match for conditional requests
+        if (req.headers['if-none-match'] === etag) {
+            return res.status(304).end();
         }
 
         res.writeHead(200, {
             'Content-Type': 'video/mp2t',
-            'Content-Length': stat.size,
-            'Cache-Control': 'public, max-age=60',
+            'Content-Length': segmentData.size,
+            'Cache-Control': 'public, max-age=60, immutable',
+            'ETag': etag,
             'Access-Control-Allow-Origin': '*',
             'X-Accel-Buffering': 'no',
             'Connection': 'keep-alive'
         });
 
-        const fileStream = fs.createReadStream(segmentPath);
-        fileStream.pipe(res);
-
-        fileStream.on('error', () => {
-            if (!res.headersSent) {
-                res.status(404).end();
-            } else {
-                res.end();
-            }
-        });
+        res.end(segmentData.data);
     });
 
     return router;
