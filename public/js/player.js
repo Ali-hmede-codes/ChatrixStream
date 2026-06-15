@@ -48,20 +48,20 @@
         if (!tech || !tech.vhs) return;
 
         if (isVeryLowBandwidth()) {
-            tech.vhs.options_.liveSyncDurationCount = 10;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 30;
+            tech.vhs.options_.liveSyncDurationCount = 6;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 20;
             tech.vhs.options_.maxBufferLength = 60;
             tech.vhs.options_.maxMaxBufferLength = 120;
         } else if (isLowBandwidth()) {
-            tech.vhs.options_.liveSyncDurationCount = 6;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 18;
+            tech.vhs.options_.liveSyncDurationCount = 5;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 15;
             tech.vhs.options_.maxBufferLength = 45;
             tech.vhs.options_.maxMaxBufferLength = 90;
         } else {
             tech.vhs.options_.liveSyncDurationCount = 4;
             tech.vhs.options_.liveMaxLatencyDurationCount = 12;
-            tech.vhs.options_.maxBufferLength = 45;
-            tech.vhs.options_.maxMaxBufferLength = 120;
+            tech.vhs.options_.maxBufferLength = 30;
+            tech.vhs.options_.maxMaxBufferLength = 60;
         }
     }
 
@@ -113,16 +113,16 @@
         };
 
         if (isVeryLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 10;
-            baseConfig.liveMaxLatencyDurationCount = 30;
+            baseConfig.liveSyncDurationCount = 6;
+            baseConfig.liveMaxLatencyDurationCount = 20;
             baseConfig.maxBufferLength = 60;
             baseConfig.maxMaxBufferLength = 120;
             baseConfig.highBufferLength = 60;
             baseConfig.maxBufferSize = 5 * 1000 * 1000;
             baseConfig.backBufferLength = 30;
         } else if (isLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 6;
-            baseConfig.liveMaxLatencyDurationCount = 18;
+            baseConfig.liveSyncDurationCount = 5;
+            baseConfig.liveMaxLatencyDurationCount = 15;
             baseConfig.maxBufferLength = 45;
             baseConfig.maxMaxBufferLength = 90;
             baseConfig.highBufferLength = 45;
@@ -131,9 +131,9 @@
         } else {
             baseConfig.liveSyncDurationCount = 4;
             baseConfig.liveMaxLatencyDurationCount = 12;
-            baseConfig.maxBufferLength = 45;
-            baseConfig.maxMaxBufferLength = 120;
-            baseConfig.highBufferLength = 45;
+            baseConfig.maxBufferLength = 30;
+            baseConfig.maxMaxBufferLength = 60;
+            baseConfig.highBufferLength = 30;
             baseConfig.maxBufferSize = 60 * 1000 * 1000;
             baseConfig.backBufferLength = 90;
         }
@@ -242,8 +242,6 @@
         buildQualityButtons(channelInfo.qualities);
         connectSSE();
         startSessionCheck();
-
-        prewarmAllQualities();
 
         var qualities = channelInfo.qualities || [];
         var sorted = qualities.sort(function(a, b) { return a.sort_order - b.sort_order; });
@@ -440,33 +438,7 @@
         vjsPlayer.on('fullscreenchange', handleFullscreenChange);
     }
 
-    function prewarmAllQualities() {
-        if (!channelInfo || !channelInfo.qualities) return;
 
-        fetch('/hls/' + channelInfo.channel_token + '/warmup?session=' + encodeURIComponent(sessionData.session_token), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-session-token': sessionData.session_token
-            }
-        }).then(function(res) {
-            if (res.status === 403) {
-                return res.json().then(function(data) {
-                    if (data.expired) {
-                        handleSessionExpired(data.error || 'Session expired');
-                    }
-                });
-            }
-        }).catch(function() {
-            channelInfo.qualities.forEach(function(q) {
-                fetch(getHlsUrl(q.label), {
-                    headers: { 'x-session-token': sessionData.session_token }
-                }).catch(function() {});
-            });
-        });
-
-        isWarmingUp = true;
-    }
 
     function buildQualityButtons(qualities) {
         if (!qualities || qualities.length === 0) return;
@@ -536,6 +508,14 @@
             manifestReadyCheckTimer = null;
         }
 
+        // Determine minSegments based on current network bandwidth
+        var minSegments = 3;
+        if (isVeryLowBandwidth()) {
+            minSegments = 5;
+        } else if (isLowBandwidth()) {
+            minSegments = 4;
+        }
+
         // Poll manifest-ready endpoint before setting video source
         // This prevents the player from requesting an m3u8 that returns 503
         var manifestPollAttempts = 0;
@@ -548,7 +528,7 @@
 
             manifestPollAttempts++;
 
-            fetch('/hls/' + channelInfo.channel_token + '/manifest-ready/' + quality + '?session=' + encodeURIComponent(sessionData.session_token), {
+            fetch('/hls/' + channelInfo.channel_token + '/manifest-ready/' + quality + '?session=' + encodeURIComponent(sessionData.session_token) + '&minSegments=' + minSegments, {
                 headers: { 'x-session-token': sessionData.session_token }
             }).then(function(res) {
                 if (res.status === 403) {

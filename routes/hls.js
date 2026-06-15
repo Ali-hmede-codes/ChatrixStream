@@ -151,12 +151,26 @@ module.exports = function(db, hlsConverter) {
             return res.status(503).json({ error: 'ffmpeg_not_available' });
         }
 
+        const targetQuality = req.body.quality || req.query.quality;
         const qualities = getQualitiesByChannel.all(channel.id);
-        for (const q of qualities) {
-            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
+        
+        if (targetQuality) {
+            const q = qualities.find(x => x.quality_label === targetQuality);
+            if (q) {
+                hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
+                return res.json({ warming: true, qualities: [q.quality_label] });
+            }
         }
 
-        res.json({ warming: true, qualities: qualities.map(q => q.quality_label) });
+        // Fallback: only warm up the first quality to avoid CPU saturation
+        if (qualities.length > 0) {
+            const sortedQualities = qualities.sort((a, b) => a.sort_order - b.sort_order);
+            const q = sortedQualities[0];
+            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
+            return res.json({ warming: true, qualities: [q.quality_label] });
+        }
+
+        res.json({ warming: false, qualities: [] });
     });
 
     router.get('/:channelToken/manifest-ready/:quality', (req, res) => {
@@ -186,7 +200,8 @@ module.exports = function(db, hlsConverter) {
             hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url, quality);
         }
 
-        const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label);
+        const minSegments = parseInt(req.query.minSegments, 10) || 3;
+        const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label, minSegments);
         res.json({ ready });
     });
 

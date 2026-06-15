@@ -58,7 +58,7 @@ class HlsConverter {
         this.activeConversions = new Map();
         this.tempDir = options.tempDir || path.join(process.cwd(), 'tmp', 'hls');
         this.segmentDuration = options.segmentDuration || 2;
-        this.listSize = options.listSize || 10;
+        this.listSize = options.listSize || 25;
         this.idleTimeout = options.idleTimeout || 30000;
         this.idleGrace = options.idleGrace || 5000;
         this.restartDelay = options.restartDelay || 3000;
@@ -245,7 +245,7 @@ class HlsConverter {
         this.ensureConversion(channelId, qualityLabel, streamUrl, qualityConfig);
     }
 
-    isManifestReady(channelId, qualityLabel) {
+    isManifestReady(channelId, qualityLabel, minSegments = 3) {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
         if (!state) return false;
@@ -253,7 +253,8 @@ class HlsConverter {
         if (!fs.existsSync(manifestPath)) return false;
         try {
             const content = fs.readFileSync(manifestPath, 'utf8');
-            return content.includes('.ts');
+            const segmentCount = (content.match(/#EXTINF:/g) || []).length;
+            return segmentCount >= minSegments;
         } catch (e) {
             return false;
         }
