@@ -231,7 +231,8 @@ module.exports = function(db, hlsConverter) {
             manifest,
             validation.sessionToken,
             hlsConverter.getDiscontinuityCount(validation.channel.id, validation.quality.quality_label),
-            hlsConverter.getStreamSessionId(validation.channel.id, validation.quality.quality_label)
+            hlsConverter.getStreamSessionId(validation.channel.id, validation.quality.quality_label),
+            hlsConverter.getStartNumber(validation.channel.id, validation.quality.quality_label)
         );
 
         res.writeHead(200, {

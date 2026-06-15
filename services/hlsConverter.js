@@ -218,6 +218,7 @@ class HlsConverter {
             manifestReady: false,
             discontinuityCount: 0,
             streamSessionId: Date.now(),
+            startNumber: 0,
             started: false
         };
 
@@ -271,6 +272,31 @@ class HlsConverter {
             state.discontinuityCount++;
         }
         state.started = true;
+
+        let startNumber = 0;
+        if (state.restarting || state.retryCount > 0) {
+            try {
+                if (fs.existsSync(state.dir)) {
+                    const files = fs.readdirSync(state.dir);
+                    let maxSegmentNum = -1;
+                    for (const file of files) {
+                        const match = file.match(/^seq_(\d+)\.ts$/);
+                        if (match) {
+                            const num = parseInt(match[1], 10);
+                            if (num > maxSegmentNum) {
+                                maxSegmentNum = num;
+                            }
+                        }
+                    }
+                    if (maxSegmentNum >= 0) {
+                        startNumber = maxSegmentNum + 1;
+                    }
+                }
+            } catch (e) {
+                console.error('HlsConverter: failed to calculate start_number', e);
+            }
+        }
+        state.startNumber = startNumber;
 
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
         const parsedUrl = new URL(state.streamUrl);
@@ -328,6 +354,9 @@ class HlsConverter {
         const segDuration = preset.segmentDuration || this.segmentDuration;
         args.push('-hls_time', String(segDuration));
         args.push('-hls_list_size', String(this.listSize));
+        if (startNumber > 0) {
+            args.push('-start_number', String(startNumber));
+        }
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+split_by_time+independent_segments');
         // hls_init_time only applies to fMP4 segments, not MPEG-TS
 
@@ -479,14 +508,14 @@ class HlsConverter {
         });
     }
 
-    rewriteManifest(manifestContent, sessionToken, discontinuityCount, streamSessionId) {
+    rewriteManifest(manifestContent, sessionToken, discontinuityCount, streamSessionId, startNumber) {
         let hasPlaylistType = false;
         let hasIndependentSegments = false;
         let hasDiscontinuitySequence = false;
-        const lines = manifestContent.split('\n').map(line => {
+        const lines = manifestContent.split('\n').flatMap(line => {
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
                 hasPlaylistType = true;
-                return '#EXT-X-PLAYLIST-TYPE:LIVE';
+                return ['#EXT-X-PLAYLIST-TYPE:LIVE'];
             }
             if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
                 hasIndependentSegments = true;
@@ -494,15 +523,19 @@ class HlsConverter {
             if (line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
                 hasDiscontinuitySequence = true;
                 // Replace with our tracked count
-                return '#EXT-X-DISCONTINUITY-SEQUENCE:' + (discontinuityCount || 0);
+                return ['#EXT-X-DISCONTINUITY-SEQUENCE:' + (discontinuityCount || 0)];
             }
             if (line.startsWith('#EXT-X-ENDLIST')) {
-                return null;
+                return [];
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
-                return line + '?session=' + sessionToken + '&_d=' + (discontinuityCount || 0) + '&_s=' + (streamSessionId || 0);
+                const rewrittenLine = line + '?session=' + sessionToken + '&_d=' + (discontinuityCount || 0) + '&_s=' + (streamSessionId || 0);
+                if (startNumber > 0 && line === `seq_${startNumber}.ts`) {
+                    return ['#EXT-X-DISCONTINUITY', rewrittenLine];
+                }
+                return [rewrittenLine];
             }
-            return line;
+            return [line];
         }).filter(line => line !== null);
 
         const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
@@ -533,6 +566,12 @@ class HlsConverter {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
         return state ? state.discontinuityCount : 0;
+    }
+
+    getStartNumber(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        return state ? state.startNumber : 0;
     }
 
     getStreamSessionId(channelId, qualityLabel) {
