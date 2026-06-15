@@ -29,6 +29,12 @@
     let maxReconnectAttempts = 10;
     let reconnectAttempts = 0;
     let manifestReadyCheckTimer = null;
+    let liveEdgeTrackingInterval = null;
+    let isCatchingUp = false;
+    let LIVE_EDGE_SOFT_THRESHOLD = 6;
+    let LIVE_EDGE_HARD_THRESHOLD = 15;
+    let CATCHUP_PLAYBACK_RATE = 1.05;
+    let NORMAL_PLAYBACK_RATE = 1.0;
 
     function trackBandwidth() {
         if (bandwidthUpdateInterval) clearInterval(bandwidthUpdateInterval);
@@ -324,6 +330,7 @@
                 adaptToNetworkConditions();
             }
             trackBandwidth();
+            startLiveEdgeTracking();
             if (vjsPlayer.muted()) {
                 unmuteBtn.classList.remove('hidden');
             } else {
@@ -615,6 +622,7 @@
 
     function destroyPlayer() {
         cancelBufferingDebounce();
+        stopLiveEdgeTracking();
         if (reconnectTimer) {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
@@ -627,6 +635,7 @@
         reconnectAttempts = 0;
 
         if (vjsPlayer) {
+            vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
             vjsPlayer.reset();
             vjsPlayer.pause();
         }
@@ -636,11 +645,91 @@
         bufferingStartTime = null;
         totalBufferingTime = 0;
         lastPlayingTime = null;
+        isCatchingUp = false;
     }
 
     function softResetPlayer() {
         cancelBufferingDebounce();
         bufferingStartTime = null;
+        isCatchingUp = false;
+        if (vjsPlayer) vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
+    }
+
+    function startLiveEdgeTracking() {
+        if (liveEdgeTrackingInterval) return;
+        liveEdgeTrackingInterval = setInterval(function() {
+            if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
+
+            var liveTracker = vjsPlayer.liveTracker;
+            var behindLive = 0;
+
+            if (liveTracker && typeof liveTracker.liveCurrentTime === 'function' && typeof liveTracker.seekableEnd === 'function') {
+                // Use Video.js liveTracker API
+                var seekEnd = liveTracker.seekableEnd();
+                var currentTime = vjsPlayer.currentTime();
+                if (seekEnd && isFinite(seekEnd) && currentTime && isFinite(currentTime)) {
+                    behindLive = seekEnd - currentTime;
+                }
+            } else {
+                // Fallback: use seekable ranges directly
+                var seekable = vjsPlayer.seekable();
+                if (seekable && seekable.length > 0) {
+                    var seekEnd = seekable.end(seekable.length - 1);
+                    var currentTime = vjsPlayer.currentTime();
+                    if (isFinite(seekEnd) && isFinite(currentTime)) {
+                        behindLive = seekEnd - currentTime;
+                    }
+                }
+            }
+
+            if (behindLive <= 0 || !isFinite(behindLive)) {
+                // We're at or ahead of live edge
+                if (isCatchingUp) {
+                    isCatchingUp = false;
+                    vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
+                }
+                return;
+            }
+
+            if (behindLive > LIVE_EDGE_HARD_THRESHOLD) {
+                // Too far behind — hard seek to live edge
+                console.log('Live edge: too far behind (' + behindLive.toFixed(1) + 's), seeking to live edge');
+                isCatchingUp = false;
+                vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
+
+                if (liveTracker && typeof liveTracker.seekToLiveEdge === 'function') {
+                    liveTracker.seekToLiveEdge();
+                } else {
+                    var seekable = vjsPlayer.seekable();
+                    if (seekable && seekable.length > 0) {
+                        // Seek to a small offset before the end to avoid edge buffering issues
+                        vjsPlayer.currentTime(seekable.end(seekable.length - 1) - 2);
+                    }
+                }
+            } else if (behindLive > LIVE_EDGE_SOFT_THRESHOLD) {
+                // Moderately behind — speed up playback to catch up smoothly
+                if (!isCatchingUp) {
+                    console.log('Live edge: drifting behind (' + behindLive.toFixed(1) + 's), speeding up to catch up');
+                    isCatchingUp = true;
+                    vjsPlayer.playbackRate(CATCHUP_PLAYBACK_RATE);
+                }
+            } else {
+                // Within acceptable range — normal speed
+                if (isCatchingUp) {
+                    console.log('Live edge: caught up (' + behindLive.toFixed(1) + 's behind), returning to normal speed');
+                    isCatchingUp = false;
+                    vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
+                }
+            }
+        }, 3000);
+    }
+
+    function stopLiveEdgeTracking() {
+        if (liveEdgeTrackingInterval) {
+            clearInterval(liveEdgeTrackingInterval);
+            liveEdgeTrackingInterval = null;
+        }
+        isCatchingUp = false;
     }
 
     function tryUnmute() {
@@ -944,12 +1033,29 @@
         }
     });
 
+    function seekToLiveEdge() {
+        if (!vjsPlayer) return;
+        var liveTracker = vjsPlayer.liveTracker;
+        if (liveTracker && typeof liveTracker.seekToLiveEdge === 'function') {
+            liveTracker.seekToLiveEdge();
+        } else {
+            var seekable = vjsPlayer.seekable();
+            if (seekable && seekable.length > 0) {
+                vjsPlayer.currentTime(seekable.end(seekable.length - 1) - 2);
+            }
+        }
+    }
+
     function handleVisibilityRestore() {
         if (sessionExpired) return;
         if (!currentQuality) return;
         if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
 
         setTimeout(function() {
+            // Always seek to live edge when returning from background
+            // to avoid watching content that's minutes behind
+            seekToLiveEdge();
+
             if (vjsPlayer.paused() && wasPlayingBeforeHidden) {
                 vjsPlayer.play().catch(function() {
                     if (!vjsPlayer.muted()) {
@@ -959,6 +1065,9 @@
                     }
                 });
             }
+
+            // Restart live edge tracking in case it was disrupted
+            startLiveEdgeTracking();
 
             if ((isIOS() || isSafari()) && wasPlayingBeforeHidden) {
                 var checkTime = vjsPlayer.currentTime();
