@@ -53,13 +53,13 @@
             tech.vhs.options_.maxBufferLength = 60;
             tech.vhs.options_.maxMaxBufferLength = 120;
         } else if (isLowBandwidth()) {
-            tech.vhs.options_.liveSyncDurationCount = 8;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 20;
+            tech.vhs.options_.liveSyncDurationCount = 6;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 18;
             tech.vhs.options_.maxBufferLength = 45;
             tech.vhs.options_.maxMaxBufferLength = 90;
         } else {
-            tech.vhs.options_.liveSyncDurationCount = 5;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 15;
+            tech.vhs.options_.liveSyncDurationCount = 4;
+            tech.vhs.options_.liveMaxLatencyDurationCount = 12;
             tech.vhs.options_.maxBufferLength = 45;
             tech.vhs.options_.maxMaxBufferLength = 120;
         }
@@ -121,16 +121,16 @@
             baseConfig.maxBufferSize = 5 * 1000 * 1000;
             baseConfig.backBufferLength = 30;
         } else if (isLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 8;
-            baseConfig.liveMaxLatencyDurationCount = 20;
+            baseConfig.liveSyncDurationCount = 6;
+            baseConfig.liveMaxLatencyDurationCount = 18;
             baseConfig.maxBufferLength = 45;
             baseConfig.maxMaxBufferLength = 90;
             baseConfig.highBufferLength = 45;
             baseConfig.maxBufferSize = 10 * 1000 * 1000;
             baseConfig.backBufferLength = 60;
         } else {
-            baseConfig.liveSyncDurationCount = 5;
-            baseConfig.liveMaxLatencyDurationCount = 15;
+            baseConfig.liveSyncDurationCount = 4;
+            baseConfig.liveMaxLatencyDurationCount = 12;
             baseConfig.maxBufferLength = 45;
             baseConfig.maxMaxBufferLength = 120;
             baseConfig.highBufferLength = 45;
