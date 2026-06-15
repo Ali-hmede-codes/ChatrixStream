@@ -428,11 +428,11 @@
                 '<div class="channel-section">' +
                     '<h5>Channel Settings</h5>' +
                     '<div class="setting-row">' +
-                        '<span class="setting-label">Require Invite Code</span>' +
-                        '<div class="toggle-switch">' +
+                        '<label class="setting-label" for="code-required-' + channel.id + '">Require Invite Code</label>' +
+                        '<label class="toggle-switch">' +
                             '<input type="checkbox" id="code-required-' + channel.id + '"' + (channel.code_required === 1 ? ' checked' : '') + ' data-action="toggle-code-required" data-id="' + channel.id + '">' +
                             '<span class="toggle-slider"></span>' +
-                        '</div>' +
+                        '</label>' +
                         '<span class="setting-hint" id="code-required-hint-' + channel.id + '">' + (channel.code_required === 1 ? 'Viewers must enter a code' : 'Anyone with the link can watch') + '</span>' +
                     '</div>' +
                 '</div>' +
