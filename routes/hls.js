@@ -278,7 +278,7 @@ module.exports = function(db, hlsConverter) {
         // Handles the race between the manifest listing a new segment
         // and the segment file appearing on disk (especially with temp_file flag).
         if (!segmentPath) {
-            await new Promise(resolve => setTimeout(resolve, 600));
+            await new Promise(resolve => setTimeout(resolve, 200));
             segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
         }
 

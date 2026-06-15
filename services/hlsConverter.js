@@ -274,6 +274,12 @@ class HlsConverter {
         }
         state.started = true;
 
+        // Delete old manifest to prevent serving stale content after restart.
+        // Without this, getManifest() reads the old manifest from disk and serves
+        // minutes-old segments to the player, causing the "loads old seq" bug.
+        const oldManifestPath = path.join(state.dir, 'index.m3u8');
+        try { fs.unlinkSync(oldManifestPath); } catch (e) { /* may not exist on first start */ }
+
         let startNumber = 0;
         if (state.restarting || state.retryCount > 0) {
             try {
@@ -480,9 +486,16 @@ class HlsConverter {
             if (!content.includes('.ts')) {
                 return null;
             }
+            // After a restart, don't serve the manifest until FFmpeg has produced
+            // enough segments for smooth playback. Without this gate, a 1-segment
+            // manifest causes immediate buffer underrun and stalling.
             if (!state.manifestReady) {
+                const segmentCount = (content.match(/#EXTINF:/g) || []).length;
+                if (segmentCount < 3) {
+                    return null;
+                }
                 state.manifestReady = true;
-                state.retryCount = 0; // Reset retry count on successful manifest
+                state.retryCount = 0;
                 if (state.startupTimer) {
                     clearTimeout(state.startupTimer);
                     state.startupTimer = null;
@@ -521,20 +534,20 @@ class HlsConverter {
     }
 
     rewriteManifest(manifestContent, sessionToken, discontinuityCount, streamSessionId, startNumber) {
-        let hasPlaylistType = false;
         let hasIndependentSegments = false;
         let hasDiscontinuitySequence = false;
         const lines = manifestContent.split('\n').flatMap(line => {
+            // Remove PLAYLIST-TYPE entirely — the HLS spec only allows EVENT or VOD.
+            // Omitting it is correct for a live sliding-window playlist.
+            // The non-standard "LIVE" value was confusing Video.js's live detection.
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
-                hasPlaylistType = true;
-                return ['#EXT-X-PLAYLIST-TYPE:LIVE'];
+                return [];
             }
             if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
                 hasIndependentSegments = true;
             }
             if (line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
                 hasDiscontinuitySequence = true;
-                // Replace with our tracked count
                 return ['#EXT-X-DISCONTINUITY-SEQUENCE:' + (discontinuityCount || 0)];
             }
             if (line.startsWith('#EXT-X-ENDLIST')) {
@@ -553,21 +566,15 @@ class HlsConverter {
         const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
         const insertIdx = versionIdx !== -1 ? versionIdx + 1 : 1;
 
-        if (!hasPlaylistType) {
-            lines.splice(insertIdx, 0, '#EXT-X-PLAYLIST-TYPE:LIVE');
-        }
-
         if (!hasIndependentSegments) {
-            const ptIdx = lines.findIndex(l => l.startsWith('#EXT-X-PLAYLIST-TYPE'));
-            const indInsertIdx = ptIdx !== -1 ? ptIdx + 1 : insertIdx + 1;
-            lines.splice(indInsertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
+            lines.splice(insertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
 
         // Add discontinuity sequence tag if FFmpeg has restarted
         // This tells the player to expect timestamp jumps between segments
         if (!hasDiscontinuitySequence && discontinuityCount > 0) {
-            const ptIdx = lines.findIndex(l => l.startsWith('#EXT-X-PLAYLIST-TYPE'));
-            const discInsertIdx = ptIdx !== -1 ? ptIdx + 1 : insertIdx + 1;
+            const indIdx = lines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
+            const discInsertIdx = indIdx !== -1 ? indIdx + 1 : insertIdx + 1;
             lines.splice(discInsertIdx, 0, '#EXT-X-DISCONTINUITY-SEQUENCE:' + discontinuityCount);
         }
 

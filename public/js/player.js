@@ -43,32 +43,18 @@
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
             if (tech && tech.vhs && tech.vhs.bandwidth) {
                 bandwidthEstimate = tech.vhs.bandwidth;
-                adaptToNetworkConditions();
             }
         }, 5000);
     }
 
+    // Note: modifying tech.vhs.options_ at runtime is unreliable across Video.js
+    // versions and can cause mid-stream seeks that trigger stalls. The initial
+    // VHS config in getVhsConfig() sets appropriate values based on bandwidth
+    // at startup. Runtime adaptation now only uses bandwidth for quality
+    // auto-downgrade decisions, not for changing internal VHS behavior.
     function adaptToNetworkConditions() {
-        if (!vjsPlayer) return;
-        var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
-        if (!tech || !tech.vhs) return;
-
-        if (isVeryLowBandwidth()) {
-            tech.vhs.options_.liveSyncDurationCount = 6;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 20;
-            tech.vhs.options_.maxBufferLength = 60;
-            tech.vhs.options_.maxMaxBufferLength = 120;
-        } else if (isLowBandwidth()) {
-            tech.vhs.options_.liveSyncDurationCount = 5;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 15;
-            tech.vhs.options_.maxBufferLength = 45;
-            tech.vhs.options_.maxMaxBufferLength = 90;
-        } else {
-            tech.vhs.options_.liveSyncDurationCount = 4;
-            tech.vhs.options_.liveMaxLatencyDurationCount = 12;
-            tech.vhs.options_.maxBufferLength = 30;
-            tech.vhs.options_.maxMaxBufferLength = 60;
-        }
+        // Intentionally empty — runtime VHS option mutation removed to prevent
+        // mid-stream liveSyncDurationCount changes that cause sudden seeks/stalls.
     }
 
     function isLowBandwidth() {
@@ -326,7 +312,6 @@
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
             if (tech && tech.vhs && tech.vhs.bandwidth) {
                 bandwidthEstimate = tech.vhs.bandwidth;
-                adaptToNetworkConditions();
             }
             trackBandwidth();
             startLiveEdgeTracking();
