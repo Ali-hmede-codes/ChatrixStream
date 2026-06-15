@@ -114,8 +114,7 @@
             usePerformanceCues: true,
             stallEnabled: true,
             handlePartialData: true,
-            experimentalBufferBasedHlsSelector: true,
-            experimentalLeastPixelRatioSelector: true
+            allowSeeksWithinUnsafeLiveWindow: true
         };
 
         if (isVeryLowBandwidth()) {

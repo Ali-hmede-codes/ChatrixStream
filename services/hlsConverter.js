@@ -342,6 +342,12 @@ class HlsConverter {
             if (preset.videoResolution) {
                 args.push('-vf', 'scale=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':force_original_aspect_ratio=decrease,pad=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':(ow-iw)/2:(oh-ih)/2');
             }
+            // Force keyframes at segment boundaries so every segment starts with an I-frame.
+            // Without this, the player may need to wait for the next keyframe to render,
+            // causing visible stalls between segments.
+            const segDur = preset.segmentDuration || this.segmentDuration;
+            args.push('-force_key_frames', 'expr:gte(t,n_forced*' + segDur + ')');
+            args.push('-sc_threshold', '0');
         }
 
         args.push('-c:a', 'aac');
@@ -358,8 +364,13 @@ class HlsConverter {
         if (startNumber > 0) {
             args.push('-start_number', String(startNumber));
         }
-        args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+split_by_time+independent_segments');
-        // hls_init_time only applies to fMP4 segments, not MPEG-TS
+        // temp_file: write segments to .tmp then rename, so player never reads a half-written segment
+        // Removed split_by_time: it forced splits at exact time boundaries regardless of keyframes,
+        // producing segments that don't start with I-frames and causing decode stalls
+        args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+independent_segments+temp_file');
+        // Keep 4 extra segments on disk after they leave the playlist, so slow players
+        // don't get 404s for segments they're still trying to download
+        args.push('-hls_delete_threshold', '4');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');

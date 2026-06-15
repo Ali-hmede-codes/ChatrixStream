@@ -261,7 +261,7 @@ module.exports = function(db, hlsConverter) {
         res.end(rewritten);
     });
 
-    router.get('/:channelToken/:quality/:segmentName', (req, res) => {
+    router.get('/:channelToken/:quality/:segmentName', async (req, res) => {
         const validation = validateHlsSession(req);
         if (!validation.valid) {
             res.writeHead(403, {
@@ -272,16 +272,31 @@ module.exports = function(db, hlsConverter) {
             return res.end(JSON.stringify({ error: validation.error, expired: true }));
         }
 
-        const segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
+        let segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
+
+        // If segment not found, wait briefly and retry once.
+        // Handles the race between the manifest listing a new segment
+        // and the segment file appearing on disk (especially with temp_file flag).
         if (!segmentPath) {
+            await new Promise(resolve => setTimeout(resolve, 600));
+            segmentPath = hlsConverter.getSegmentPath(validation.channel.id, validation.quality.quality_label, req.params.segmentName);
+        }
+
+        if (!segmentPath) {
+            return res.status(404).end();
+        }
+
+        let stat;
+        try {
+            stat = fs.statSync(segmentPath);
+        } catch (e) {
             return res.status(404).end();
         }
 
         res.writeHead(200, {
             'Content-Type': 'video/mp2t',
-            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-            'Pragma': 'no-cache',
-            'Expires': '0',
+            'Content-Length': stat.size,
+            'Cache-Control': 'public, max-age=60',
             'Access-Control-Allow-Origin': '*',
             'X-Accel-Buffering': 'no',
             'Connection': 'keep-alive'
