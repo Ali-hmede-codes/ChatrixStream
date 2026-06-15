@@ -12,7 +12,7 @@ const QUALITY_PRESETS = {
         videoTune: 'zerolatency',
         videoProfile: 'baseline',
         videoLevel: '3.0',
-        videoResolution: '480x360',
+        videoResolution: '640x360',
         audioBitrate: '48k',
         audioChannels: '1',
         audioRate: '44100',

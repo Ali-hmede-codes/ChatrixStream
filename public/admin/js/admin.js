@@ -256,7 +256,7 @@
                                     '<div class="edit-row"><label>Sort Order</label><input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px"></div>' +
                                     '<div class="edit-row"><label>Preset</label><select class="edit-preset-key">' +
                                         '<option value="">Auto (resolve from label)</option>' +
-                                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (480x360, ~400k)</option>' +
+                                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (640x360, ~400k)</option>' +
                                         '<option value="medium"' + (q.preset_key === 'medium' ? ' selected' : '') + '>Medium (source res, ~1000k)</option>' +
                                         '<option value="high"' + (q.preset_key === 'high' ? ' selected' : '') + '>High / Source (copy)</option>' +
                                         '<option value="copy"' + (q.preset_key === 'copy' ? ' selected' : '') + '>Copy (no transcode)</option>' +
@@ -292,7 +292,7 @@
                     '<input type="text" id="stream-add-url-' + ch.id + '" placeholder="Stream URL">' +
                     '<select id="stream-add-preset-' + ch.id + '">' +
                         '<option value="">Auto (resolve from label)</option>' +
-                        '<option value="low">Low (480x360, ~400k)</option>' +
+                        '<option value="low">Low (640x360, ~400k)</option>' +
                         '<option value="medium">Medium (source res, ~1000k)</option>' +
                         '<option value="high">High / Source (copy)</option>' +
                         '<option value="copy">Copy (no transcode)</option>' +
@@ -462,7 +462,7 @@
                         '<input type="text" id="add-quality-url-' + channel.id + '" placeholder="Stream URL">' +
                         '<select id="add-quality-preset-' + channel.id + '">' +
                             '<option value="">Auto (resolve from label)</option>' +
-                            '<option value="low">Low (480x360, ~400k)</option>' +
+                            '<option value="low">Low (640x360, ~400k)</option>' +
                             '<option value="medium">Medium (source res, ~1000k)</option>' +
                             '<option value="high">High / Source (copy)</option>' +
                             '<option value="copy">Copy (no transcode)</option>' +
@@ -528,7 +528,7 @@
                     '<div class="edit-row"><label>Sort Order</label><input type="number" class="edit-sort" value="' + (q.sort_order || 0) + '" style="width:60px"></div>' +
                     '<div class="edit-row"><label>Preset</label><select class="edit-preset-key">' +
                         '<option value="">Auto (resolve from label)</option>' +
-                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (480x360, ~400k)</option>' +
+                        '<option value="low"' + (q.preset_key === 'low' ? ' selected' : '') + '>Low (640x360, ~400k)</option>' +
                         '<option value="medium"' + (q.preset_key === 'medium' ? ' selected' : '') + '>Medium (source res, ~1000k)</option>' +
                         '<option value="high"' + (q.preset_key === 'high' ? ' selected' : '') + '>High / Source (copy, no transcode)</option>' +
                         '<option value="copy"' + (q.preset_key === 'copy' ? ' selected' : '') + '>Copy (stream copy, no transcode)</option>' +
@@ -584,7 +584,7 @@
             return parts.join(', ');
         }
         var preset = resolvePresetForDisplay(q.quality_label || q.label || '');
-        if (preset === 'low') return 'libx264, ~400k, 480x360';
+        if (preset === 'low') return 'libx264, ~400k, 640x360';
         if (preset === 'medium') return 'libx264, ~1000k, source res';
         return 'stream copy (no transcode)';
     }
