@@ -1,5 +1,7 @@
 const { PassThrough } = require('stream');
 const { http: followHttp, https: followHttps } = require('follow-redirects');
+const { resolveRedirect } = require('./urlResolver');
+
 
 class StreamManager {
     constructor(options = {}) {
@@ -14,7 +16,7 @@ class StreamManager {
         return `${channelId}:${qualityLabel}`;
     }
 
-    _connectSource(key) {
+    async _connectSource(key) {
         const state = this.activeStreams.get(key);
         if (!state) return;
 
@@ -23,7 +25,17 @@ class StreamManager {
             state.sourceResponse = null;
         }
 
-        const parsedUrl = new URL(state.streamUrl);
+        let resolvedUrl = state.streamUrl;
+        try {
+            resolvedUrl = await resolveRedirect(state.streamUrl);
+        } catch (e) {
+            console.error('StreamManager: error pre-resolving stream URL:', e.message);
+        }
+
+        // Check if stream was stopped while resolving the redirect
+        if (!this.activeStreams.has(key)) return;
+
+        const parsedUrl = new URL(resolvedUrl);
         const requester = parsedUrl.protocol === 'https:' ? followHttps : followHttp;
 
         const requestOptions = {
@@ -43,7 +55,7 @@ class StreamManager {
             requestOptions.headers['Authorization'] = 'Basic ' + auth;
         }
 
-        const req = requester.get(state.streamUrl, requestOptions, (res) => {
+        const req = requester.get(resolvedUrl, requestOptions, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400) {
                 console.log(`Stream redirect: ${res.statusCode} -> ${res.headers.location}`);
                 res.resume();
@@ -52,13 +64,13 @@ class StreamManager {
             }
 
             if (res.statusCode !== 200) {
-                console.error(`Stream source returned status ${res.statusCode} for ${state.streamUrl}`);
+                console.error(`Stream source returned status ${res.statusCode} for ${resolvedUrl}`);
                 res.resume();
                 this._scheduleReconnect(key);
                 return;
             }
 
-            console.log(`Stream connected: ${state.streamUrl} (status ${res.statusCode}, type ${res.headers['content-type'] || 'unknown'})`);
+            console.log(`Stream connected: ${resolvedUrl} (status ${res.statusCode}, type ${res.headers['content-type'] || 'unknown'})`);
 
             state.sourceResponse = res;
 

@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { resolveRedirect } = require('./urlResolver');
+
 
 // Simple LRU cache for segment data (in-memory)
 class SegmentLRU {
@@ -293,7 +295,7 @@ class HlsConverter {
         }
     }
 
-    _startFfmpeg(key) {
+    async _startFfmpeg(key) {
         const state = this.activeConversions.get(key);
         if (!state) return;
 
@@ -338,8 +340,18 @@ class HlsConverter {
         }
         state.startNumber = startNumber;
 
+        let resolvedUrl = state.streamUrl;
+        try {
+            resolvedUrl = await resolveRedirect(state.streamUrl);
+        } catch (e) {
+            console.error('HlsConverter: error pre-resolving stream URL:', e.message);
+        }
+
+        // Check if conversion was stopped while resolving the redirect
+        if (!this.activeConversions.has(key)) return;
+
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
-        const parsedUrl = new URL(state.streamUrl);
+        const parsedUrl = new URL(resolvedUrl);
         const args = [];
 
         if (parsedUrl.username || parsedUrl.password) {
@@ -347,7 +359,7 @@ class HlsConverter {
             args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
         }
 
-        const cleanUrl = new URL(state.streamUrl);
+        const cleanUrl = new URL(resolvedUrl);
         cleanUrl.username = '';
         cleanUrl.password = '';
         const urlWithoutCreds = cleanUrl.toString();

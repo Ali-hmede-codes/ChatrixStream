@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { resolveRedirect } = require('./urlResolver');
 
 const QUALITY_PRESETS = {
     low: {
@@ -240,7 +241,7 @@ class PipeConverter {
         }
     }
 
-    _startFfmpeg(key) {
+    async _startFfmpeg(key) {
         const state = this.activeStreams.get(key);
         if (!state) return;
 
@@ -256,8 +257,18 @@ class PipeConverter {
         state.recentChunks = [];
         state.recentChunksSize = 0;
 
+        let resolvedUrl = state.streamUrl;
+        try {
+            resolvedUrl = await resolveRedirect(state.streamUrl);
+        } catch (e) {
+            console.error('PipeConverter: error pre-resolving stream URL:', e.message);
+        }
+
+        // Check if stream was stopped while resolving the redirect
+        if (!this.activeStreams.has(key)) return;
+
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
-        const parsedUrl = new URL(state.streamUrl);
+        const parsedUrl = new URL(resolvedUrl);
         const args = [];
 
         // Auth header for sources behind Basic auth
@@ -266,7 +277,7 @@ class PipeConverter {
             args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
         }
 
-        const cleanUrl = new URL(state.streamUrl);
+        const cleanUrl = new URL(resolvedUrl);
         cleanUrl.username = '';
         cleanUrl.password = '';
         const urlStr = cleanUrl.toString();
