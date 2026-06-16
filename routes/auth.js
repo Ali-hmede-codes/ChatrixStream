@@ -52,6 +52,9 @@ function deriveBitrateInfo(qualityRow) {
 module.exports = function(db) {
     const router = express.Router();
 
+    const sessionCache = new Map();
+    const SESSION_CACHE_TTL = 15000; // 15 seconds
+
     const getQualitiesByChannel = db.prepare('SELECT quality_label as label, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
 
@@ -151,10 +154,18 @@ module.exports = function(db) {
         const { session_token } = req.body;
         if (!session_token) return res.json({ valid: false, error: 'No session token provided' });
 
+        const now = Date.now();
+        const cached = sessionCache.get(session_token);
+        if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
+            return res.json(cached.response);
+        }
+
         const result = validateSession(db, session_token);
 
         if (!result.valid) {
-            return res.json({ valid: false, error: result.error });
+            const errRes = { valid: false, error: result.error };
+            sessionCache.set(session_token, { response: errRes, timestamp: now });
+            return res.json(errRes);
         }
 
         const qualities = getQualitiesByChannel.all(result.channel_id);
@@ -162,13 +173,27 @@ module.exports = function(db) {
             ...q,
             bitrate_info: deriveBitrateInfo(q)
         }));
-        res.json({
+        
+        const successRes = {
             valid: true,
             channel_token: result.channel_token,
             channel_name: result.channel_name,
             qualities: qualitiesWithInfo,
             expires_at: result.expires_at
-        });
+        };
+
+        sessionCache.set(session_token, { response: successRes, timestamp: now });
+
+        // Clean up cache occasionally
+        if (sessionCache.size > 1000) {
+            for (const [key, val] of sessionCache) {
+                if (now - val.timestamp > SESSION_CACHE_TTL) {
+                    sessionCache.delete(key);
+                }
+            }
+        }
+
+        res.json(successRes);
     });
 
     return router;

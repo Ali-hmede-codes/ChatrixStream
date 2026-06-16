@@ -495,3 +495,63 @@ video::-webkit-media-controls-fullscreen-button {
     }
 }
 
+/* Live Badge Styles */
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(20, 20, 32, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.live-badge:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: white;
+}
+
+.live-badge.live-badge-sync {
+    color: var(--success);
+    border-color: rgba(46, 204, 113, 0.3);
+    cursor: default;
+    pointer-events: none;
+}
+
+.live-badge.live-badge-sync .live-dot {
+    background-color: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: livePulse 1.5s infinite;
+}
+
+.live-badge.live-badge-behind {
+    color: #f1c40f;
+    border-color: rgba(241, 196, 15, 0.3);
+}
+
+.live-badge.live-badge-behind .live-dot {
+    background-color: #f1c40f;
+    box-shadow: 0 0 6px #f1c40f;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-secondary);
+    display: inline-block;
+    transition: background-color 0.2s ease;
+}
+
+@keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.15); }
+}
+

@@ -368,17 +368,7 @@
         }
     }
 
-    function tryAutoDowngrade() {
-        if (autoDowngradeDisabled) return;
-        if (!currentQuality) return;
-        var lowerQuality = getQualityLower(currentQuality);
-        if (lowerQuality && lowerQuality !== currentQuality) {
-            console.warn('Auto-downgrading from ' + currentQuality + ' to ' + lowerQuality + ' due to buffering');
-            autoDowngradeDisabled = true;
-            switchQuality(lowerQuality);
-            setTimeout(function() { autoDowngradeDisabled = false; }, 60000);
-        }
-    }
+    // tryAutoDowngrade logic removed. Quality shifts are strictly manual to prevent reset glitches.
 
     // Creates a wrapper around the native <video> element that mimics
     // the Video.js player API so all existing code works transparently
@@ -503,12 +493,6 @@
                 var bufferingDuration = Date.now() - bufferingStartTime;
                 totalBufferingTime += bufferingDuration;
                 bufferingStartTime = null;
-                if (lastPlayingTime) {
-                    var playDuration = Date.now() - lastPlayingTime;
-                    if (playDuration < BUFFERING_THRESHOLD_MS && bufferingDuration > 4000 && !autoDowngradeDisabled) {
-                        tryAutoDowngrade();
-                    }
-                }
             }
             lastPlayingTime = Date.now();
         });
@@ -549,9 +533,6 @@
 
                 if (code === 2) {
                     consecutiveNetworkErrors++;
-                    if (consecutiveNetworkErrors > 3 && !autoDowngradeDisabled) {
-                        tryAutoDowngrade();
-                    }
                     console.warn('Network error, reconnecting... (attempt ' + consecutiveNetworkErrors + ')');
                     scheduleReconnect();
                 } else if (code === 3) {
@@ -583,9 +564,7 @@
             stallCount++;
             lastStallTime = Date.now();
             scheduleBufferingDebounce();
-            if (stallCount > 5 && !autoDowngradeDisabled) {
-                tryAutoDowngrade();
-            }
+            // Auto downgrade disabled
         });
 
         vjsPlayer.on('ended', function() {
@@ -773,9 +752,7 @@
                 enableStashBuffer: !isStruggling,
                 stashInitialSize: isStruggling ? 128 * 1024 : 16 * 1024,
                 lazyLoadMaxDuration: 3 * 60,
-                liveBufferLatencyChasing: true,
-                liveBufferLatencyMaxLatency: isStruggling ? 8 : 4,
-                liveBufferLatencyMinRemain: isStruggling ? 3 : 1.5,
+                liveBufferLatencyChasing: false,
                 autoCleanupSourceBuffer: true,
                 autoCleanupMaxBackwardDuration: 20,
                 autoCleanupMinBackwardDuration: 10,
@@ -794,9 +771,6 @@
                             return;
                         }
                         consecutiveNetworkErrors++;
-                        if (consecutiveNetworkErrors > 3 && !autoDowngradeDisabled) {
-                            tryAutoDowngrade();
-                        }
                         console.warn('Pipe: network error, reconnecting... (attempt ' + consecutiveNetworkErrors + ')');
                         scheduleReconnect();
                     });
@@ -916,122 +890,87 @@
         if (vjsPlayer) vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
     }
 
+    function seekToLiveEdge() {
+        if (!vjsPlayer) return;
+        var liveTracker = vjsPlayer.liveTracker;
+        if (liveTracker && typeof liveTracker.seekToLiveEdge === 'function') {
+            liveTracker.seekToLiveEdge();
+        } else {
+            var seekable = vjsPlayer.seekable();
+            if (seekable && seekable.length > 0) {
+                // Seek to safe target: 5s behind absolute live
+                vjsPlayer.currentTime(Math.max(0, seekable.end(seekable.length - 1) - 5));
+            } else {
+                var buffered = vjsPlayer.buffered();
+                if (buffered && buffered.length > 0) {
+                    // Seek to safe target: 5s behind absolute live
+                    vjsPlayer.currentTime(Math.max(0, buffered.end(buffered.length - 1) - 5));
+                }
+            }
+        }
+    }
+
     function startLiveEdgeTracking() {
-        // In pipe mode, mpegts.js handles latency chasing internally
-        // On iOS/Safari, native HLS handles latency chasing natively; manual seeking/speedups cause freeze/stalls
-        if (usePipeMode || isIOS() || isSafari()) return;
         if (liveEdgeTrackingInterval) return;
         liveEdgeTrackingInterval = setInterval(function() {
             if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
 
-            var liveTracker = vjsPlayer.liveTracker;
             var behindLive = 0;
+            var liveTracker = vjsPlayer.liveTracker;
 
             if (liveTracker && typeof liveTracker.liveCurrentTime === 'function' && typeof liveTracker.seekableEnd === 'function') {
-                // Use Video.js liveTracker API
                 var seekEnd = liveTracker.seekableEnd();
                 var currentTime = vjsPlayer.currentTime();
                 if (seekEnd && isFinite(seekEnd) && currentTime && isFinite(currentTime)) {
                     behindLive = seekEnd - currentTime;
                 }
             } else {
-                // Fallback: use seekable ranges directly
                 var seekable = vjsPlayer.seekable();
+                var currentTime = vjsPlayer.currentTime();
                 if (seekable && seekable.length > 0) {
                     var seekEnd = seekable.end(seekable.length - 1);
-                    var currentTime = vjsPlayer.currentTime();
                     if (isFinite(seekEnd) && isFinite(currentTime)) {
                         behindLive = seekEnd - currentTime;
                     }
-                }
-            }
-
-            if (behindLive <= 0 || !isFinite(behindLive)) {
-                // We're at or ahead of live edge
-                if (isCatchingUp) {
-                    isCatchingUp = false;
-                    vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
-                }
-                return;
-            }
-
-            if (behindLive > LIVE_EDGE_HARD_THRESHOLD) {
-                // Too far behind — hard seek to live edge
-                console.log('Live edge: too far behind (' + behindLive.toFixed(1) + 's), seeking to live edge');
-                isCatchingUp = false;
-                vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
-
-                if (liveTracker && typeof liveTracker.seekToLiveEdge === 'function') {
-                    liveTracker.seekToLiveEdge();
                 } else {
-                    var seekable = vjsPlayer.seekable();
-                    if (seekable && seekable.length > 0) {
-                        // Seek to a small offset before the end to avoid edge buffering issues
-                        vjsPlayer.currentTime(seekable.end(seekable.length - 1) - 2);
+                    var buffered = vjsPlayer.buffered();
+                    if (buffered && buffered.length > 0) {
+                        var bufferedEnd = buffered.end(buffered.length - 1);
+                        if (isFinite(bufferedEnd) && isFinite(currentTime)) {
+                            behindLive = bufferedEnd - currentTime;
+                        }
                     }
                 }
-            } else if (behindLive > LIVE_EDGE_SOFT_THRESHOLD) {
-                // Moderately behind — speed up playback to catch up smoothly
-                if (!isCatchingUp) {
-                    console.log('Live edge: drifting behind (' + behindLive.toFixed(1) + 's), speeding up to catch up');
-                    isCatchingUp = true;
-                    vjsPlayer.playbackRate(CATCHUP_PLAYBACK_RATE);
-                }
-            } else {
-                // Within acceptable range — normal speed
-                if (isCatchingUp) {
-                    console.log('Live edge: caught up (' + behindLive.toFixed(1) + 's behind), returning to normal speed');
-                    isCatchingUp = false;
-                    vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
+            }
+
+            const liveBadge = document.getElementById('live-badge');
+            const liveBadgeText = document.getElementById('live-badge-text');
+
+            if (liveBadge) {
+                liveBadge.classList.remove('hidden');
+
+                // Green/Live zone is 0 to 6 seconds behind absolute live
+                var isSync = behindLive <= 6;
+
+                if (isSync || behindLive <= 0 || !isFinite(behindLive)) {
+                    liveBadge.className = 'live-badge live-badge-sync';
+                    liveBadgeText.textContent = 'LIVE';
+                } else {
+                    liveBadge.className = 'live-badge live-badge-behind';
+                    // Show latency relative to the safe target (5s behind absolute live)
+                    var displayBehind = Math.max(1, Math.round(behindLive - 5));
+                    liveBadgeText.textContent = 'GO LIVE (-' + displayBehind + 's)';
                 }
             }
-        }, 1500);
+        }, 1000);
     }
 
-    let bufferHealthInterval = null;
-
     function startBufferHealthMonitor() {
-        // In pipe mode, mpegts.js handles buffer management internally
-        // On iOS/Safari, native HLS manages buffers natively; manual seeks cause stalls
-        if (usePipeMode || isIOS() || isSafari()) return;
-        if (bufferHealthInterval) return;
-        bufferHealthInterval = setInterval(function() {
-            if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
-
-            var buffered = vjsPlayer.buffered();
-            if (!buffered || buffered.length === 0) return;
-
-            var currentTime = vjsPlayer.currentTime();
-            var bufferEnd = buffered.end(buffered.length - 1);
-            var bufferAhead = bufferEnd - currentTime;
-
-            // If buffer ahead is dangerously low (< 1 second) while playing,
-            // proactively seek to live edge to prevent an imminent stall.
-            // On low-bandwidth, cellular, or struggling connections, seeking will clear the small buffer and guarantee a stall.
-            if (bufferAhead >= 0 && bufferAhead < 1 && !isCatchingUp) {
-                if (isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling()) {
-                    // Do not seek. Allow the player to buffer naturally and/or auto-downgrade quality.
-                    return;
-                }
-                var seekable = vjsPlayer.seekable();
-                if (seekable && seekable.length > 0) {
-                    var seekEnd = seekable.end(seekable.length - 1);
-                    var behindLive = seekEnd - currentTime;
-                    // Only seek if we're actually behind live edge
-                    if (behindLive > 3) {
-                        console.log('Buffer health: low buffer (' + bufferAhead.toFixed(1) + 's), seeking to live edge (' + behindLive.toFixed(1) + 's behind)');
-                        vjsPlayer.currentTime(seekEnd - 2);
-                    }
-                }
-            }
-        }, 2000);
+        // Auto-seeking disabled to prevent loop stalls
     }
 
     function stopBufferHealthMonitor() {
-        if (bufferHealthInterval) {
-            clearInterval(bufferHealthInterval);
-            bufferHealthInterval = null;
-        }
+        // Auto-seeking disabled
     }
 
     function stopLiveEdgeTracking() {
@@ -1040,7 +979,8 @@
             liveEdgeTrackingInterval = null;
         }
         isCatchingUp = false;
-        stopBufferHealthMonitor();
+        const liveBadge = document.getElementById('live-badge');
+        if (liveBadge) liveBadge.classList.add('hidden');
     }
 
     function tryUnmute() {
@@ -1324,6 +1264,20 @@
 
     fullscreenBtn.addEventListener('click', toggleFullscreen);
 
+    const liveBadgeEl = document.getElementById('live-badge');
+    if (liveBadgeEl) {
+        liveBadgeEl.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            seekToLiveEdge();
+        });
+        liveBadgeEl.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            seekToLiveEdge();
+        });
+    }
+
     // Keep document-level as fallback
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -1344,18 +1298,7 @@
         }
     });
 
-    function seekToLiveEdge() {
-        if (!vjsPlayer) return;
-        var liveTracker = vjsPlayer.liveTracker;
-        if (liveTracker && typeof liveTracker.seekToLiveEdge === 'function') {
-            liveTracker.seekToLiveEdge();
-        } else {
-            var seekable = vjsPlayer.seekable();
-            if (seekable && seekable.length > 0) {
-                vjsPlayer.currentTime(seekable.end(seekable.length - 1) - 2);
-            }
-        }
-    }
+    // seekToLiveEdge definition moved higher up
 
     function handleVisibilityRestore() {
         if (sessionExpired) return;
