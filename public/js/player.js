@@ -148,47 +148,74 @@
         return sorted.length > 0 ? sorted[sorted.length - 1].label : null;
     }
 
-    function getVhsConfig() {
-        var baseConfig = {
-            overrideNative: !isIOS() && !isSafari(),
-            enableLowInitialPlaylist: true,
-            liveSyncOnStall: true,
-            usePerformanceCues: true,
-            stallEnabled: true,
-            handlePartialData: true,
-            allowSeeksWithinUnsafeLiveWindow: true
+    function createNativeHlsWrapper() {
+        var eventMap = {};
+        var fullscreenState = false;
+
+        var wrapper = {
+            play: function() { return videoEl.play(); },
+            pause: function() { videoEl.pause(); },
+            paused: function() { return videoEl.paused; },
+            ended: function() { return videoEl.ended; },
+            muted: function(val) {
+                if (val !== undefined) { videoEl.muted = val; return wrapper; }
+                return videoEl.muted;
+            },
+            currentTime: function(val) {
+                if (val !== undefined) { videoEl.currentTime = val; return wrapper; }
+                return videoEl.currentTime;
+            },
+            seekable: function() { return videoEl.seekable; },
+            buffered: function() { return videoEl.buffered; },
+            playbackRate: function(val) {
+                if (val !== undefined) { videoEl.playbackRate = val; return wrapper; }
+                return videoEl.playbackRate;
+            },
+            src: function(val) {
+                if (val !== undefined) {
+                    if (typeof val === 'string') {
+                        videoEl.src = val;
+                    } else if (val && val.src) {
+                        videoEl.src = val.src;
+                    }
+                    return wrapper;
+                }
+                return videoEl.src;
+            },
+            reset: function() {
+                videoEl.removeAttribute('src');
+                try { videoEl.load(); } catch(e) {}
+            },
+            error: function() {
+                var e = videoEl.error;
+                if (!e) return null;
+                return { code: e.code, message: e.message || '' };
+            },
+            on: function(event, fn) {
+                videoEl.addEventListener(event, fn);
+                return wrapper;
+            },
+            ready: function(fn) { setTimeout(fn, 0); },
+            isFullscreen: function() { return fullscreenState; },
+            requestFullscreen: function() {
+                var container = document.getElementById('video-container');
+                if (container.requestFullscreen) container.requestFullscreen();
+                else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+            },
+            exitFullscreen: function() {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            },
+            tech: function() {
+                return {
+                    vhs: null,
+                    el: function() { return videoEl; }
+                };
+            },
+            liveTracker: null
         };
 
-        if (isVeryLowBandwidth()) {
-            baseConfig.liveSyncDurationCount = 5;
-            baseConfig.liveMaxLatencyDurationCount = 15;
-            baseConfig.maxBufferLength = 60;
-            baseConfig.maxMaxBufferLength = 120;
-            baseConfig.highBufferLength = 60;
-            baseConfig.maxBufferSize = 5 * 1000 * 1000;
-            baseConfig.backBufferLength = 30;
-            baseConfig.liveBackBufferLength = 30;
-        } else if (isLowBandwidth() || isCellularConnection()) {
-            baseConfig.liveSyncDurationCount = 5;
-            baseConfig.liveMaxLatencyDurationCount = 12;
-            baseConfig.maxBufferLength = 45;
-            baseConfig.maxMaxBufferLength = 90;
-            baseConfig.highBufferLength = 45;
-            baseConfig.maxBufferSize = 10 * 1000 * 1000;
-            baseConfig.backBufferLength = 30;
-            baseConfig.liveBackBufferLength = 30;
-        } else {
-            baseConfig.liveSyncDurationCount = 3;
-            baseConfig.liveMaxLatencyDurationCount = 8;
-            baseConfig.maxBufferLength = 30;
-            baseConfig.maxMaxBufferLength = 60;
-            baseConfig.highBufferLength = 30;
-            baseConfig.maxBufferSize = 60 * 1000 * 1000;
-            baseConfig.backBufferLength = 30;
-            baseConfig.liveBackBufferLength = 30;
-        }
-
-        return baseConfig;
+        return wrapper;
     }
 
     const errorOverlay = document.getElementById('error-overlay');
@@ -272,7 +299,7 @@
         // Detect pipe mode: use mpegts.js direct pipe for non-iOS/Safari
         // iOS Safari doesn't support MSE well for live streaming, so it uses HLS
         usePipeMode = !isIOS() && !isSafari() && typeof mpegts !== 'undefined' && mpegts.isSupported();
-        console.log('Player mode:', usePipeMode ? 'pipe (mpegts.js)' : 'hls (video.js)');
+        console.log('Player mode:', usePipeMode ? 'pipe (mpegts.js)' : 'hls (native html5)');
 
         if (channelInfo.expires_at) {
             const expires = new Date(channelInfo.expires_at);
@@ -296,7 +323,7 @@
             }
         }
 
-        initVideoJS();
+        initPlayer();
         updateLiveEdgeThresholds();
         buildQualityButtons(channelInfo.qualities);
         connectSSE();
@@ -437,33 +464,20 @@
         return wrapper;
     }
 
-    function initVideoJS() {
+    function initPlayer() {
         if (usePipeMode) {
             // Pipe mode: use native <video> + mpegts.js, no Video.js needed
             vjsPlayer = createMpegtsWrapper();
-            videoEl.classList.remove('video-js', 'vjs-default-skin');
-            videoEl.style.width = '100%';
-            videoEl.style.height = '100%';
-            videoEl.style.objectFit = 'contain';
-            videoEl.style.backgroundColor = '#000';
         } else {
-            // HLS mode: use Video.js with VHS
-            var vhsConfig = getVhsConfig();
-            vjsPlayer = videojs(videoEl, {
-                controls: false,
-                autoplay: false,
-                muted: true,
-                preload: 'auto',
-                liveui: true,
-                fluid: false,
-                responsive: false,
-                fill: true,
-                html5: {
-                    vhs: vhsConfig,
-                    nativeAudioDescriptions: true
-                }
-            });
+            // HLS mode: use native <video> with HLS natively supported by Safari
+            vjsPlayer = createNativeHlsWrapper();
         }
+
+        videoEl.classList.remove('video-js', 'vjs-default-skin');
+        videoEl.style.width = '100%';
+        videoEl.style.height = '100%';
+        videoEl.style.objectFit = 'contain';
+        videoEl.style.backgroundColor = '#000';
 
         vjsPlayer.on('playing', function() {
             cancelBufferingDebounce();
@@ -518,7 +532,7 @@
             var code = error.code;
             var message = error.message || '';
 
-            // First, check if this is a 403 from the XHR response (Video.js often reports as code 4)
+            // First, check if this is a 403 from the XHR response
             checkSessionExpired().then(function(expired) {
                 if (expired) {
                     handleSessionExpired('Session expired');
@@ -593,8 +607,6 @@
                 }
             }, 500);
         });
-
-        vjsPlayer.on('fullscreenchange', handleFullscreenChange);
     }
 
 
@@ -904,7 +916,8 @@
 
     function startLiveEdgeTracking() {
         // In pipe mode, mpegts.js handles latency chasing internally
-        if (usePipeMode) return;
+        // On iOS/Safari, native HLS handles latency chasing natively; manual seeking/speedups cause freeze/stalls
+        if (usePipeMode || isIOS() || isSafari()) return;
         if (liveEdgeTrackingInterval) return;
         liveEdgeTrackingInterval = setInterval(function() {
             if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
@@ -977,7 +990,8 @@
 
     function startBufferHealthMonitor() {
         // In pipe mode, mpegts.js handles buffer management internally
-        if (usePipeMode) return;
+        // On iOS/Safari, native HLS manages buffers natively; manual seeks cause stalls
+        if (usePipeMode || isIOS() || isSafari()) return;
         if (bufferHealthInterval) return;
         bufferHealthInterval = setInterval(function() {
             if (!vjsPlayer || vjsPlayer.paused() || sessionExpired || !currentQuality) return;
@@ -1347,8 +1361,16 @@
         if (errorOverlay && !errorOverlay.classList.contains('hidden')) return;
 
         setTimeout(function() {
-            // Always seek to live edge when returning from background
-            // to avoid watching content that's minutes behind
+            if (isIOS() || isSafari()) {
+                // On iOS/Safari, native HLS handles background recovery best by doing a clean reload
+                if (wasPlayingBeforeHidden) {
+                    console.log('Visibility restore (iOS/Safari): doing clean stream reload');
+                    reloadCurrentStream();
+                }
+                return;
+            }
+
+            // Always seek to live edge when returning from background (for non-iOS/Safari)
             seekToLiveEdge();
 
             if (vjsPlayer.paused() && wasPlayingBeforeHidden) {
@@ -1363,19 +1385,6 @@
 
             // Restart live edge tracking in case it was disrupted
             startLiveEdgeTracking();
-
-            if ((isIOS() || isSafari()) && wasPlayingBeforeHidden) {
-                var checkTime = vjsPlayer.currentTime();
-                setTimeout(function() {
-                    if (Math.abs(vjsPlayer.currentTime() - checkTime) < 0.5 && !vjsPlayer.paused()) {
-                        console.log('Stream stalled after returning from background, reloading...');
-                        reloadCurrentStream();
-                    } else if (vjsPlayer.paused() && wasPlayingBeforeHidden) {
-                        console.log('Video did not resume after background, reloading...');
-                        reloadCurrentStream();
-                    }
-                }, 3000);
-            }
         }, 500);
     }
 

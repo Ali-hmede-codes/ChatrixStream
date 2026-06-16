@@ -127,30 +127,6 @@ body {
     background: #000;
 }
 
-#video-player .vjs-big-play-button,
-#video-player .vjs-control-bar,
-#video-player .vjs-loading-spinner,
-#video-player .vjs-text-track-display {
-    display: none !important;
-}
-
-.video-js {
-    width: 100% !important;
-    height: 100% !important;
-    background: #000 !important;
-}
-
-/* Allow clicks to pass through video.js overlay divs to the actual video element */
-.video-js .vjs-tech {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
-}
-
-.video-js > div:not(.vjs-tech) {
-    pointer-events: none;
-}
-
 #quality-bar {
     position: absolute;
     bottom: 60px;
@@ -307,22 +283,7 @@ body {
     object-fit: contain;
 }
 
-/* video.js fullscreen state */
-.video-js.vjs-fullscreen {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 9999 !important;
-    background: #000 !important;
-}
 
-.video-js.vjs-fullscreen .vjs-tech {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
-}
 
 /* Hide quality bar in native fullscreen on iOS */
 video::-webkit-media-controls-fullscreen-button {
