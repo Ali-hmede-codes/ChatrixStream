@@ -65,47 +65,21 @@ rtmp: false
 ################################################
 hls: true
 hlsAddress: :8888
-# Generate HLS only when requested (saves resources)
 hlsAlwaysRemux: true
-# Use mpegts variant for maximum compatibility (Safari, iOS, video.js)
 hlsVariant: mpegts
-# Number of segments to keep in the playlist
 hlsSegmentCount: 7
-# Segment duration — 2s matches previous FFmpeg setting
 hlsSegmentDuration: 2s
-# Max segment size to prevent RAM exhaustion
 hlsSegmentMaxSize: 50M
-# Close muxer after no readers for 60s
 hlsMuxerCloseAfter: 60s
-
-################################################
-# Global settings -> WebRTC server
-################################################
-webrtc: false
-
-################################################
-# Global settings -> SRT server
-################################################
-srt: false
-
-################################################
-# Global settings -> MoQ server
-################################################
-moq: false
 
 ################################################
 # Default path settings
 ################################################
 pathDefaults:
-  # Source is a publisher by default (overridden by dynamic paths)
   source: publisher
-  # Pull source only when readers are connected
   sourceOnDemand: true
-  # Time to wait for source to become ready
   sourceOnDemandStartTimeout: 30s
-  # Close source when no readers for this long
   sourceOnDemandCloseAfter: 60s
-  # Maximum number of concurrent readers per path
   maxReaders: 0
 
 ################################################
