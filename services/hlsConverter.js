@@ -342,9 +342,12 @@ class HlsConverter {
 
         let resolvedUrl = state.streamUrl;
         try {
-            resolvedUrl = await resolveRedirect(state.streamUrl);
+            const parsed = new URL(state.streamUrl);
+            if (parsed.username || parsed.password) {
+                resolvedUrl = await resolveRedirect(state.streamUrl);
+            }
         } catch (e) {
-            console.error('HlsConverter: error pre-resolving stream URL:', e.message);
+            console.error('HlsConverter: error checking/pre-resolving stream URL:', e.message);
         }
 
         // Check if conversion was stopped while resolving the redirect
@@ -475,14 +478,18 @@ class HlsConverter {
         }
 
         state.restarting = true;
+        let delay = this.restartDelay;
+        if (state.retryCount > 1) {
+            delay = Math.min(30000, this.restartDelay * Math.pow(1.5, state.retryCount - 1));
+        }
         state.restartTimer = setTimeout(() => {
             state.restartTimer = null;
             state.restarting = false;
             if (this.activeConversions.has(key)) {
-                console.log('HlsConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ')');
+                console.log('HlsConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ') delay', delay);
                 this._startFfmpeg(key);
             }
-        }, this.restartDelay);
+        }, delay);
     }
 
     _recordAccess(key) {

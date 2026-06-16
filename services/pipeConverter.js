@@ -259,9 +259,12 @@ class PipeConverter {
 
         let resolvedUrl = state.streamUrl;
         try {
-            resolvedUrl = await resolveRedirect(state.streamUrl);
+            const parsed = new URL(state.streamUrl);
+            if (parsed.username || parsed.password) {
+                resolvedUrl = await resolveRedirect(state.streamUrl);
+            }
         } catch (e) {
-            console.error('PipeConverter: error pre-resolving stream URL:', e.message);
+            console.error('PipeConverter: error checking/pre-resolving stream URL:', e.message);
         }
 
         // Check if stream was stopped while resolving the redirect
@@ -401,14 +404,18 @@ class PipeConverter {
         }
 
         state.restarting = true;
+        let delay = this.restartDelay;
+        if (state.retryCount > 1) {
+            delay = Math.min(30000, this.restartDelay * Math.pow(1.5, state.retryCount - 1));
+        }
         state.restartTimer = setTimeout(() => {
             state.restartTimer = null;
             state.restarting = false;
             if (this.activeStreams.has(key)) {
-                console.log('PipeConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ')');
+                console.log('PipeConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ') delay', delay);
                 this._startFfmpeg(key);
             }
-        }, this.restartDelay);
+        }, delay);
     }
 
     _scheduleIdleCheck(key) {

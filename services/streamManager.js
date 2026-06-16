@@ -27,9 +27,12 @@ class StreamManager {
 
         let resolvedUrl = state.streamUrl;
         try {
-            resolvedUrl = await resolveRedirect(state.streamUrl);
+            const parsed = new URL(state.streamUrl);
+            if (parsed.username || parsed.password) {
+                resolvedUrl = await resolveRedirect(state.streamUrl);
+            }
         } catch (e) {
-            console.error('StreamManager: error pre-resolving stream URL:', e.message);
+            console.error('StreamManager: error checking/pre-resolving stream URL:', e.message);
         }
 
         // Check if stream was stopped while resolving the redirect
