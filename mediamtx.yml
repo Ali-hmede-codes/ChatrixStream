@@ -41,7 +41,6 @@ authInternalUsers:
 ################################################
 api: true
 apiAddress: :9997
-apiAllowOrigins: ["*"]
 
 ################################################
 # Global settings -> Metrics
