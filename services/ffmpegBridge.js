@@ -15,33 +15,43 @@ class FFmpegBridge {
     }
 
     async isFFmpegAvailable() {
-        if (this._ffmpegAvailable !== null) return this._ffmpegAvailable;
+        if (this._ffmpegAvailable === true) return true;
 
         return new Promise((resolve) => {
             try {
                 const proc = spawn(this.ffmpegPath, ['-version'], {
                     stdio: 'pipe',
-                    windowsHide: true,
-                    timeout: 5000
+                    windowsHide: true
                 });
                 let output = '';
                 proc.stdout.on('data', (data) => { output += data.toString(); });
                 proc.stderr.on('data', (data) => { output += data.toString(); });
                 proc.on('close', (code) => {
-                    this._ffmpegAvailable = code === 0 && output.length > 0;
-                    resolve(this._ffmpegAvailable);
+                    if (code === 0 && output.length > 0) {
+                        this._ffmpegAvailable = true;
+                        console.log('FFmpegBridge: ffmpeg detected (' + output.split('\n')[0].trim() + ')');
+                        resolve(true);
+                    } else {
+                        this._ffmpegAvailable = null;
+                        console.error('FFmpegBridge: ffmpeg check failed (code=' + code + ', output=' + output.substring(0, 200) + ')');
+                        resolve(false);
+                    }
                 });
-                proc.on('error', () => {
-                    this._ffmpegAvailable = false;
+                proc.on('error', (err) => {
+                    this._ffmpegAvailable = null;
+                    console.error('FFmpegBridge: ffmpeg spawn error:', err.message, '(path=' + this.ffmpegPath + ')');
                     resolve(false);
                 });
-                setTimeout(() => {
+                const timeout = setTimeout(() => {
                     try { proc.kill(); } catch (_) {}
-                    this._ffmpegAvailable = false;
+                    this._ffmpegAvailable = null;
+                    console.error('FFmpegBridge: ffmpeg check timed out');
                     resolve(false);
                 }, 5000);
+                proc.on('close', () => { clearTimeout(timeout); });
             } catch (e) {
-                this._ffmpegAvailable = false;
+                this._ffmpegAvailable = null;
+                console.error('FFmpegBridge: ffmpeg check exception:', e.message);
                 resolve(false);
             }
         });

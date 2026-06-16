@@ -139,14 +139,12 @@ class MediaMTXManager {
     async _createPublisherPath(pathName) {
         try {
             await this._apiRequest('POST', '/v3/config/paths/add/' + pathName, {
-                sourceOnDemand: false,
-                hlsMuxerCloseAfter: '120s'
+                sourceOnDemand: false
             });
         } catch (e) {
             try {
                 await this._apiRequest('PATCH', '/v3/config/paths/patch/' + pathName, {
-                    sourceOnDemand: false,
-                    hlsMuxerCloseAfter: '120s'
+                    sourceOnDemand: false
                 });
             } catch (e2) {
                 console.error('MediaMTXManager: failed to create publisher path', pathName, e.message);
