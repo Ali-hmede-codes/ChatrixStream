@@ -1,5 +1,4 @@
 const { spawn } = require('child_process');
-const { resolveRedirect } = require('./urlResolver');
 
 const QUALITY_PRESETS = {
     low: {
@@ -241,7 +240,7 @@ class PipeConverter {
         }
     }
 
-    async _startFfmpeg(key) {
+    _startFfmpeg(key) {
         const state = this.activeStreams.get(key);
         if (!state) return;
 
@@ -257,21 +256,8 @@ class PipeConverter {
         state.recentChunks = [];
         state.recentChunksSize = 0;
 
-        let resolvedUrl = state.streamUrl;
-        try {
-            const parsed = new URL(state.streamUrl);
-            if (parsed.username || parsed.password) {
-                resolvedUrl = await resolveRedirect(state.streamUrl);
-            }
-        } catch (e) {
-            console.error('PipeConverter: error checking/pre-resolving stream URL:', e.message);
-        }
-
-        // Check if stream was stopped while resolving the redirect
-        if (!this.activeStreams.has(key)) return;
-
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
-        const parsedUrl = new URL(resolvedUrl);
+        const parsedUrl = new URL(state.streamUrl);
         const args = [];
 
         // Auth header for sources behind Basic auth
@@ -280,7 +266,7 @@ class PipeConverter {
             args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
         }
 
-        const cleanUrl = new URL(resolvedUrl);
+        const cleanUrl = new URL(state.streamUrl);
         cleanUrl.username = '';
         cleanUrl.password = '';
         const urlStr = cleanUrl.toString();
@@ -404,18 +390,14 @@ class PipeConverter {
         }
 
         state.restarting = true;
-        let delay = this.restartDelay;
-        if (state.retryCount > 1) {
-            delay = Math.min(30000, this.restartDelay * Math.pow(1.5, state.retryCount - 1));
-        }
         state.restartTimer = setTimeout(() => {
             state.restartTimer = null;
             state.restarting = false;
             if (this.activeStreams.has(key)) {
-                console.log('PipeConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ') delay', delay);
+                console.log('PipeConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ')');
                 this._startFfmpeg(key);
             }
-        }, delay);
+        }, this.restartDelay);
     }
 
     _scheduleIdleCheck(key) {

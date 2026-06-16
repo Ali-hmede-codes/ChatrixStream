@@ -1,8 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { resolveRedirect } = require('./urlResolver');
-
 
 // Simple LRU cache for segment data (in-memory)
 class SegmentLRU {
@@ -295,7 +293,7 @@ class HlsConverter {
         }
     }
 
-    async _startFfmpeg(key) {
+    _startFfmpeg(key) {
         const state = this.activeConversions.get(key);
         if (!state) return;
 
@@ -340,21 +338,8 @@ class HlsConverter {
         }
         state.startNumber = startNumber;
 
-        let resolvedUrl = state.streamUrl;
-        try {
-            const parsed = new URL(state.streamUrl);
-            if (parsed.username || parsed.password) {
-                resolvedUrl = await resolveRedirect(state.streamUrl);
-            }
-        } catch (e) {
-            console.error('HlsConverter: error checking/pre-resolving stream URL:', e.message);
-        }
-
-        // Check if conversion was stopped while resolving the redirect
-        if (!this.activeConversions.has(key)) return;
-
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
-        const parsedUrl = new URL(resolvedUrl);
+        const parsedUrl = new URL(state.streamUrl);
         const args = [];
 
         if (parsedUrl.username || parsedUrl.password) {
@@ -362,7 +347,7 @@ class HlsConverter {
             args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
         }
 
-        const cleanUrl = new URL(resolvedUrl);
+        const cleanUrl = new URL(state.streamUrl);
         cleanUrl.username = '';
         cleanUrl.password = '';
         const urlWithoutCreds = cleanUrl.toString();
@@ -478,18 +463,14 @@ class HlsConverter {
         }
 
         state.restarting = true;
-        let delay = this.restartDelay;
-        if (state.retryCount > 1) {
-            delay = Math.min(30000, this.restartDelay * Math.pow(1.5, state.retryCount - 1));
-        }
         state.restartTimer = setTimeout(() => {
             state.restartTimer = null;
             state.restarting = false;
             if (this.activeConversions.has(key)) {
-                console.log('HlsConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ') delay', delay);
+                console.log('HlsConverter: restarting ffmpeg for', key, '(retry', state.retryCount, '/', this.maxRetries, ')');
                 this._startFfmpeg(key);
             }
-        }, delay);
+        }, this.restartDelay);
     }
 
     _recordAccess(key) {
