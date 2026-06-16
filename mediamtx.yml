@@ -89,8 +89,6 @@ srt: no
 # Default path settings
 ################################################
 pathDefaults:
-  source: publisher
-  sourceOnDemand: yes
   sourceOnDemandStartTimeout: 30s
   sourceOnDemandCloseAfter: 60s
   maxReaders: 0
