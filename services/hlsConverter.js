@@ -252,7 +252,7 @@ class HlsConverter {
             // In-memory caches to avoid disk I/O per viewer
             cachedManifest: null,
             cachedManifestTime: 0,
-            segmentCache: new SegmentLRU(6)
+            segmentCache: new SegmentLRU(20)
         };
 
         this.activeConversions.set(key, state);
@@ -357,6 +357,8 @@ class HlsConverter {
         const urlWithoutCreds = cleanUrl.toString();
 
         args.push('-nostdin');
+        args.push('-threads', '0');
+        args.push('-thread_queue_size', '512');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
@@ -374,8 +376,10 @@ class HlsConverter {
 
         if (preset.copyVideo) {
             args.push('-c:v', 'copy');
+            args.push('-threads:v', '1');
         } else {
             args.push('-c:v', preset.videoCodec);
+            args.push('-threads:v', '0');
             if (preset.videoPreset) args.push('-preset', preset.videoPreset);
             if (preset.videoTune) args.push('-tune', preset.videoTune);
             if (preset.videoProfile) args.push('-profile:v', preset.videoProfile);
@@ -386,15 +390,13 @@ class HlsConverter {
             if (preset.videoResolution) {
                 args.push('-vf', 'scale=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':force_original_aspect_ratio=decrease,pad=' + preset.videoResolution.split('x')[0] + ':' + preset.videoResolution.split('x')[1] + ':(ow-iw)/2:(oh-ih)/2');
             }
-            // Force keyframes at segment boundaries so every segment starts with an I-frame.
-            // Without this, the player may need to wait for the next keyframe to render,
-            // causing visible stalls between segments.
             const segDur = preset.segmentDuration || this.segmentDuration;
             args.push('-force_key_frames', 'expr:gte(t,n_forced*' + segDur + ')');
             args.push('-sc_threshold', '0');
         }
 
         args.push('-c:a', 'aac');
+        args.push('-threads:a', '0');
         args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
@@ -412,8 +414,7 @@ class HlsConverter {
         // Removed split_by_time: it forced splits at exact time boundaries regardless of keyframes,
         // producing segments that don't start with I-frames and causing decode stalls
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+independent_segments+temp_file');
-        // Keep 6 extra segments on disk after they leave the playlist, so slow players
-        // don't get 404s for segments they're still trying to download
+        args.push('-fflags', '+flush_packets');
         args.push('-hls_delete_threshold', '6');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');

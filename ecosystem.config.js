@@ -7,7 +7,7 @@ module.exports = {
       exec_mode: 'fork',
       instances: 1,
 
-      max_memory_restart: '6G',
+      max_memory_restart: '8G',
 
       node_args: [
         '--max-old-space-size=8192',
@@ -31,9 +31,9 @@ module.exports = {
       autorestart: true,
       watch: false,
 
-      kill_timeout: 10000,
-      listen_timeout: 10000,
-      shutdown_timeout: 15000,
+      kill_timeout: 15000,
+      listen_timeout: 15000,
+      shutdown_timeout: 20000,
     },
   ],
 };

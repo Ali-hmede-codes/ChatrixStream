@@ -55,7 +55,7 @@ class PipeConverter {
         this.idleTimeout = options.idleTimeout || 30000;
         this.restartDelay = options.restartDelay || 3000;
         this.maxRetries = options.maxRetries || 15;
-        this.rollingBufferSize = options.rollingBufferSize || 2 * 1024 * 1024;
+        this.rollingBufferSize = options.rollingBufferSize || 4 * 1024 * 1024;
         this.ffmpegAvailable = false;
         this.qualityPresets = options.qualityPresets || QUALITY_PRESETS;
         this._checkFfmpeg();
@@ -275,8 +275,9 @@ class PipeConverter {
         cleanUrl.password = '';
         const urlStr = cleanUrl.toString();
 
-        // Input options — same proven config as hlsConverter
         args.push('-nostdin');
+        args.push('-threads', '0');
+        args.push('-thread_queue_size', '512');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
@@ -292,11 +293,12 @@ class PipeConverter {
         args.push('-max_delay', '0');
         args.push('-i', urlStr);
 
-        // Video encoding
         if (preset.copyVideo) {
             args.push('-c:v', 'copy');
+            args.push('-threads:v', '1');
         } else {
             args.push('-c:v', preset.videoCodec);
+            args.push('-threads:v', '0');
             if (preset.videoPreset) args.push('-preset', preset.videoPreset);
             if (preset.videoTune) args.push('-tune', preset.videoTune);
             if (preset.videoProfile) args.push('-profile:v', preset.videoProfile);
@@ -308,13 +310,12 @@ class PipeConverter {
                 const parts = preset.videoResolution.split('x');
                 args.push('-vf', 'scale=' + parts[0] + ':' + parts[1] + ':force_original_aspect_ratio=decrease,pad=' + parts[0] + ':' + parts[1] + ':(ow-iw)/2:(oh-ih)/2');
             }
-            // Force keyframes every 2 seconds so new clients can sync quickly
             args.push('-force_key_frames', 'expr:gte(t,n_forced*2)');
             args.push('-sc_threshold', '0');
         }
 
-        // Audio encoding
         args.push('-c:a', 'aac');
+        args.push('-threads:a', '0');
         args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
