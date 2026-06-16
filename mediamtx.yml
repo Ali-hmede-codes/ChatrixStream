@@ -6,10 +6,10 @@
 ################################################
 # Global settings -> General
 ################################################
-logLevel: info
+logLevel: infoo
 logDestinations: [stdout]
-readTimeout: 30s
-writeTimeout: 30s
+readTimeout: 60s
+writeTimeout: 60s
 writeQueueSize: 512
 
 ################################################
@@ -17,7 +17,6 @@ writeQueueSize: 512
 ################################################
 authMethod: internal
 authInternalUsers:
-  # Allow read access without credentials (Node.js handles auth before proxying)
   - user: any
     pass:
     ips: []
@@ -28,7 +27,6 @@ authInternalUsers:
         path:
       - action: playback
         path:
-  # Admin API access from localhost only
   - user: any
     pass:
     ips: ["127.0.0.1", "::1"]
@@ -73,7 +71,7 @@ hlsVariant: mpegts
 hlsSegmentCount: 7
 hlsSegmentDuration: 2s
 hlsSegmentMaxSize: 50M
-hlsMuxerCloseAfter: 60s
+hlsMuxerCloseAfter: 120s
 
 ################################################
 # Global settings -> WebRTC server
@@ -89,13 +87,12 @@ srt: no
 # Default path settings
 ################################################
 pathDefaults:
-  sourceOnDemandStartTimeout: 30s
-  sourceOnDemandCloseAfter: 60s
+  sourceOnDemandStartTimeout: 60s
+  sourceOnDemandCloseAfter: 120s
   maxReaders: 0
 
 ################################################
 # Path settings
 ################################################
 paths:
-  # All other paths are created dynamically via the Control API
   all_others:

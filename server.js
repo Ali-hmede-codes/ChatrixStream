@@ -5,6 +5,7 @@ const cors = require('cors');
 const initDB = require('./db/init');
 const { seedAdminUsers } = require('./services/adminUser');
 const MediaMTXManager = require('./services/mediamtxManager');
+const FFmpegBridge = require('./services/ffmpegBridge');
 const rateLimiter = require('./middleware/rateLimiter');
 const adminRoutes = require('./routes/admin');
 const adminLoginRoutes = require('./routes/adminLogin');
@@ -17,12 +18,29 @@ const sseRoutes = require('./routes/sse');
 const db = initDB(process.env.DB_PATH);
 seedAdminUsers(db);
 
+const ffmpegBridge = new FFmpegBridge({
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+    rtspHost: (process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554').replace('rtsp://', '').split(':')[0] || 'localhost',
+    rtspPort: parseInt((process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554').replace('rtsp://', '').split(':')[1]) || 8554,
+    restartDelay: parseInt(process.env.FFMPEG_RESTART_DELAY_MS) || 3000,
+    maxRestartAttempts: parseInt(process.env.FFMPEG_MAX_RESTART_ATTEMPTS) || 5
+});
+
 const mediamtxManager = new MediaMTXManager({
     apiUrl: process.env.MEDIAMTX_API_URL || 'http://localhost:9997',
     hlsUrl: process.env.MEDIAMTX_HLS_URL || 'http://localhost:8888',
     rtspUrl: process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554',
-    idleTimeout: parseInt(process.env.MEDIAMTX_IDLE_TIMEOUT_MS) || 60000,
-    startupTimeout: parseInt(process.env.MEDIAMTX_STARTUP_TIMEOUT_MS) || 30000
+    idleTimeout: parseInt(process.env.MEDIAMTX_IDLE_TIMEOUT_MS) || 120000,
+    startupTimeout: parseInt(process.env.MEDIAMTX_STARTUP_TIMEOUT_MS) || 45000,
+    ffmpegBridge: ffmpegBridge
+});
+
+ffmpegBridge.isFFmpegAvailable().then(function(available) {
+    if (available) {
+        console.log('FFmpegBridge: ffmpeg is available');
+    } else {
+        console.warn('FFmpegBridge: ffmpeg is NOT available — HTTP source streams will not work. Install ffmpeg and add it to PATH.');
+    }
 });
 
 const app = express();
@@ -130,6 +148,7 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown() {
     console.log('Shutting down...');
+    ffmpegBridge.destroy();
     mediamtxManager.destroy();
     mediamtxManager.removeAll().catch(() => {});
     server.close(() => {

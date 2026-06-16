@@ -270,12 +270,25 @@ module.exports = function(db, mediamtxManager) {
             return res.status(403).json({ ready: false, expired: true, error: 'Channel link expired' });
         }
 
+        const isBridgeSource = mediamtxManager._isBridgeSource(quality.stream_url);
+        const needsFFmpeg = isBridgeSource;
+
+        if (needsFFmpeg) {
+            const ffmpegAvailable = await mediamtxManager.ffmpegBridge.isFFmpegAvailable();
+            if (!ffmpegAvailable) {
+                return res.json({ ready: false, sourceType: 'http', needsFFmpeg: true, error: 'ffmpeg is not installed — required for HTTP source streams' });
+            }
+        }
+
         let pathEnsured = false;
         try {
             await mediamtxManager.ensurePath(channel.id, quality.quality_label, quality.stream_url, quality);
             pathEnsured = true;
         } catch (e) {
             console.warn('HLS manifest-ready: ensurePath failed for', channel.id, quality.quality_label, e.message);
+            if (e.message && e.message.includes('ffmpeg')) {
+                return res.json({ ready: false, sourceType: 'http', needsFFmpeg: true, error: e.message });
+            }
         }
 
         if (pathEnsured) {
@@ -288,7 +301,11 @@ module.exports = function(db, mediamtxManager) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0, private');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
-        res.json({ ready });
+        res.json({
+            ready,
+            sourceType: isBridgeSource ? 'http' : 'direct',
+            needsFFmpeg: needsFFmpeg || false
+        });
     });
 
     // HLS manifest endpoint — proxy to MediaMTX and rewrite segment URLs
@@ -337,15 +354,43 @@ module.exports = function(db, mediamtxManager) {
 
         mediamtxManager.recordAccess(validation.channel.id, validation.quality.quality_label);
 
-        // Wait for the path to be ready (source connected, stream available)
+        const isBridgeSource = mediamtxManager._isBridgeSource(validation.quality.stream_url);
+        const waitTimeout = isBridgeSource ? 30000 : 15000;
+
         const ready = await mediamtxManager.waitForPathReady(
             validation.channel.id,
             validation.quality.quality_label,
-            15000
+            waitTimeout
         );
 
         if (!ready) {
-            // Check if the source URL is reachable — give a specific error if not
+            if (isBridgeSource && mediamtxManager.ffmpegBridge) {
+                const ffmpegRunning = mediamtxManager.ffmpegBridge.isRunning(
+                    mediamtxManager.getPathName(validation.channel.id, validation.quality.quality_label)
+                );
+                const lastError = mediamtxManager.ffmpegBridge.getLastError(
+                    mediamtxManager.getPathName(validation.channel.id, validation.quality.quality_label)
+                );
+
+                if (!ffmpegRunning) {
+                    const ffmpegAvailable = await mediamtxManager.ffmpegBridge.isFFmpegAvailable();
+                    if (!ffmpegAvailable) {
+                        console.error('HLS: ffmpeg not installed — required for HTTP source:', validation.quality.stream_url);
+                        res.writeHead(503, {
+                            'Content-Type': 'application/json',
+                            'Retry-After': '30',
+                            'Access-Control-Allow-Origin': '*',
+                            'X-Stream-Error': 'ffmpeg_not_available'
+                        });
+                        return res.end(JSON.stringify({ error: 'ffmpeg_not_available', message: 'ffmpeg is not installed on the server. HTTP source streams require ffmpeg.' }));
+                    }
+                }
+
+                if (lastError) {
+                    console.error('HLS: ffmpeg error for channel', validation.channel.id, ':', lastError);
+                }
+            }
+
             const sourceCheck = await mediamtxManager.checkSourceReachable(validation.quality.stream_url);
             if (!sourceCheck.reachable) {
                 console.error('HLS: Source URL unreachable for channel', validation.channel.id, 'quality', validation.quality.quality_label, '- URL:', validation.quality.stream_url, '- Error:', sourceCheck.error);

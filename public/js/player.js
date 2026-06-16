@@ -638,11 +638,11 @@
             }).then(function(res) {
                 if (res.status === 403) {
                     return res.json().then(function(data) {
-                        if (data.expired) {
-                            handleSessionExpired(data.error || 'Session expired');
-                        }
-                        return null;
+                        return { expired: true, error: data.error || 'Session expired', ready: false };
                     });
+                }
+                if (res.status === 404) {
+                    return { ready: false, notFound: true };
                 }
                 return res.json();
             }).then(function(data) {
@@ -650,15 +650,35 @@
                 if (currentQuality !== quality) return;
 
                 if (data.ready) {
-                    // Manifest is ready — now set the source
                     setVideoSource(quality);
+                } else if (data.needsFFmpeg) {
+                    destroyPlayer();
+                    showError('Server Error', data.error || 'ffmpeg is not installed on the server. HTTP source streams require ffmpeg.');
+                    errorBtn.textContent = 'Retry';
+                    errorBtn.onclick = function() {
+                        reconnectAttempts = 0;
+                        reconnectBackoff = 2000;
+                        errorOverlay.classList.add('hidden');
+                        startStream(currentQuality || getAvailableQualities()[0]?.label);
+                    };
+                    return;
+                } else if (data.expired) {
+                    handleSessionExpired(data.error || 'Session expired');
+                    return;
                 } else if (manifestPollAttempts < maxManifestPollAttempts) {
                     showLoading('Starting ' + quality.toUpperCase() + ' stream... (' + manifestPollAttempts + 's)');
                     manifestReadyCheckTimer = setTimeout(pollManifestReady, manifestPollInterval);
                 } else {
-                    // Timeout — try setting source anyway, it might work now
-                    console.warn('Manifest ready timeout, attempting to play anyway');
-                    setVideoSource(quality);
+                    console.warn('Manifest ready timeout after', manifestPollAttempts, 'polls');
+                    destroyPlayer();
+                    showError('Stream Not Available', 'The stream could not be started after ' + manifestPollAttempts + ' seconds. The source may be offline or unreachable.');
+                    errorBtn.textContent = 'Retry';
+                    errorBtn.onclick = function() {
+                        reconnectAttempts = 0;
+                        reconnectBackoff = 2000;
+                        errorOverlay.classList.add('hidden');
+                        startStream(currentQuality || getAvailableQualities()[0]?.label);
+                    };
                 }
             }).catch(function() {
                 // Network error — try setting source anyway
