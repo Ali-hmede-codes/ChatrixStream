@@ -203,6 +203,9 @@ module.exports = function(db, hlsConverter) {
 
         const minSegments = parseInt(req.query.minSegments, 10) || 3;
         const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label, minSegments);
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.json({ ready });
     });
 

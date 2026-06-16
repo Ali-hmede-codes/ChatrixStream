@@ -289,7 +289,7 @@ class PipeConverter {
 
         // Audio encoding
         args.push('-c:a', 'aac');
-        args.push('-af', 'aresample=async=50:first_pts=0');
+        args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
         args.push('-b:a', preset.audioBitrate);

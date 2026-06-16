@@ -656,7 +656,7 @@
     }
 
     function getHlsUrl(quality) {
-        return window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token;
+        return window.location.origin + '/hls/' + channelInfo.channel_token + '/' + quality + '/index.m3u8?session=' + sessionData.session_token + '&_cb=' + Date.now();
     }
 
     function getPipeUrl(quality) {
