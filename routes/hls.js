@@ -270,16 +270,20 @@ module.exports = function(db, mediamtxManager) {
             return res.status(403).json({ ready: false, expired: true, error: 'Channel link expired' });
         }
 
-        // Ensure the path is registered
+        let pathEnsured = false;
         try {
             await mediamtxManager.ensurePath(channel.id, quality.quality_label, quality.stream_url, quality);
-        } catch (e) { /* ignore */ }
+            pathEnsured = true;
+        } catch (e) {
+            console.warn('HLS manifest-ready: ensurePath failed for', channel.id, quality.quality_label, e.message);
+        }
 
-        // Trigger MediaMTX to start pulling the source (sourceOnDemand needs a reader)
-        mediamtxManager.triggerSource(channel.id, quality.quality_label).catch(() => {});
-
-        // Check if MediaMTX has the stream ready
-        const ready = await mediamtxManager.isPathReady(channel.id, quality.quality_label);
+        if (pathEnsured) {
+            mediamtxManager.triggerSource(channel.id, quality.quality_label).catch(() => {});
+            var ready = await mediamtxManager.isPathReady(channel.id, quality.quality_label);
+        } else {
+            var ready = false;
+        }
 
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0, private');
         res.setHeader('Pragma', 'no-cache');

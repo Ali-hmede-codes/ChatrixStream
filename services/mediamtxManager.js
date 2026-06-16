@@ -119,10 +119,25 @@ class MediaMTXManager {
         const existing = this.activePaths.get(pathName);
         if (existing) {
             existing.lastAccess = Date.now();
+            try {
+                await this._apiRequest('GET', '/v3/config/paths/get/' + pathName);
+            } catch (e) {
+                if (e.statusCode === 404) {
+                    this.activePaths.delete(pathName);
+                } else {
+                    return existing;
+                }
+            }
+            if (!this.activePaths.has(pathName)) {
+                return this._createPath(pathName, channelId, qualityLabel, streamUrl, qualityConfig);
+            }
             return existing;
         }
 
-        // Parse credentials from the stream URL for MediaMTX source
+        return this._createPath(pathName, channelId, qualityLabel, streamUrl, qualityConfig);
+    }
+
+    async _createPath(pathName, channelId, qualityLabel, streamUrl, qualityConfig) {
         const sourceUrl = this._buildSourceUrl(streamUrl);
 
         try {
@@ -133,7 +148,6 @@ class MediaMTXManager {
                 sourceOnDemandCloseAfter: '60s'
             });
         } catch (e) {
-            // Path might already exist from a previous session — try to update it
             try {
                 await this._apiRequest('PATCH', '/v3/config/paths/patch/' + pathName, {
                     source: sourceUrl,
@@ -244,20 +258,19 @@ class MediaMTXManager {
         const pathName = this.getPathName(channelId, qualityLabel);
         try {
             const result = await this._apiRequest('GET', '/v3/paths/get/' + pathName);
-            // MediaMTX v3 API wraps in { item: { ready: bool, ... } }
             const item = result && result.item ? result.item : result;
             if (item && item.ready !== undefined) {
                 return item.ready;
             }
-            // If path exists in the API but no ready field, check for tracks
             if (item && item.tracks && item.tracks.length > 0) {
                 return true;
             }
-            // Path config exists but source not connected yet
             return false;
         } catch (e) {
-            if (e.statusCode === 404) return false;
-            // API error — assume not ready
+            if (e.statusCode === 404) {
+                this.activePaths.delete(pathName);
+                return false;
+            }
             console.error('MediaMTXManager: isPathReady error for', pathName, e.message);
             return false;
         }
