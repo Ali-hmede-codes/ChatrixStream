@@ -1,5 +1,6 @@
 ################################################
 # MediaMTX Configuration for ChatrixStream
+# Compatible with MediaMTX v1.12.0
 ################################################
 
 ################################################
@@ -28,8 +29,8 @@ authInternalUsers:
       - action: playback
         path:
   # Admin API access from localhost only
-  - user: admin
-    pass: changeme
+  - user: any
+    pass:
     ips: ["127.0.0.1", "::1"]
     permissions:
       - action: api
@@ -39,33 +40,35 @@ authInternalUsers:
 ################################################
 # Global settings -> Control API
 ################################################
-api: true
+api: yes
 apiAddress: :9997
+apiAllowOrigin: '*'
 
 ################################################
 # Global settings -> Metrics
 ################################################
-metrics: false
+metrics: no
 metricsAddress: :9998
 
 ################################################
 # Global settings -> RTSP server
 ################################################
-rtsp: true
+rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp]
 
 ################################################
 # Global settings -> RTMP server
 ################################################
-rtmp: false
+rtmp: no
 
 ################################################
 # Global settings -> HLS server
 ################################################
-hls: true
+hls: yes
 hlsAddress: :8888
-hlsAlwaysRemux: true
+hlsAllowOrigin: '*'
+hlsAlwaysRemux: yes
 hlsVariant: mpegts
 hlsSegmentCount: 7
 hlsSegmentDuration: 2s
@@ -73,11 +76,21 @@ hlsSegmentMaxSize: 50M
 hlsMuxerCloseAfter: 60s
 
 ################################################
+# Global settings -> WebRTC server
+################################################
+webrtc: no
+
+################################################
+# Global settings -> SRT server
+################################################
+srt: no
+
+################################################
 # Default path settings
 ################################################
 pathDefaults:
   source: publisher
-  sourceOnDemand: true
+  sourceOnDemand: yes
   sourceOnDemandStartTimeout: 30s
   sourceOnDemandCloseAfter: 60s
   maxReaders: 0
@@ -87,3 +100,4 @@ pathDefaults:
 ################################################
 paths:
   # All other paths are created dynamically via the Control API
+  all_others:

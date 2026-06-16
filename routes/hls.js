@@ -302,10 +302,12 @@ module.exports = function(db, mediamtxManager) {
 
         const available = await mediamtxManager.isAvailable();
         if (!available) {
+            console.error('HLS: MediaMTX server is NOT available for manifest request:', req.params.channelToken, req.params.quality);
             res.writeHead(503, {
                 'Content-Type': 'application/json',
                 'Retry-After': '10',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'X-Stream-Error': 'media_server_not_available'
             });
             return res.end(JSON.stringify({ error: 'media_server_not_available', message: 'MediaMTX server is not running.' }));
         }
@@ -319,6 +321,7 @@ module.exports = function(db, mediamtxManager) {
                 validation.quality
             );
         } catch (e) {
+            console.error('HLS: Failed to register path for channel', validation.channel.id, 'quality', validation.quality.quality_label, ':', e.message);
             res.writeHead(503, {
                 'Content-Type': 'application/json',
                 'Retry-After': '5',
@@ -338,6 +341,7 @@ module.exports = function(db, mediamtxManager) {
         );
 
         if (!ready) {
+            console.warn('HLS: Path not ready after waiting for channel', validation.channel.id, 'quality', validation.quality.quality_label, '- source URL:', validation.quality.stream_url);
             res.writeHead(503, {
                 'Content-Type': 'application/json',
                 'Retry-After': '3',

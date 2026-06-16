@@ -472,11 +472,16 @@
                     vjsPlayer.reset();
                     startStream(currentQuality);
                 } else if (code === 4) {
-                    // Check if this is a 503 (stream not ready) — retryable
+                    // Check if this is a 503 (stream not ready or MediaMTX down) — retryable
                     var is503 = message.indexOf('503') !== -1 || message.indexOf('Service Unavailable') !== -1;
-                    if (is503) {
-                        console.warn('Stream not ready (503), waiting and retrying...');
-                        // Use longer delay for 503 — stream is still starting up
+                    var isMediaServerDown = message.indexOf('media_server_not_available') !== -1;
+                    if (is503 || isMediaServerDown) {
+                        console.warn('Stream server unavailable (503), waiting and retrying...');
+                        // Show a more helpful message if MediaMTX is down
+                        if (isMediaServerDown || (reconnectAttempts >= 3 && is503)) {
+                            showLoading('Stream server is starting up, please wait...');
+                        }
+                        // Use longer delay for 503 — stream/server may still be starting up
                         scheduleReconnect(5000);
                     } else {
                         console.warn('Source error (code 4), reconnecting...');
