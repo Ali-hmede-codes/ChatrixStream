@@ -749,7 +749,7 @@
                 url: pipeUrl
             }, {
                 enableWorker: true,
-                enableStashBuffer: !isStruggling,
+                enableStashBuffer: true,
                 stashInitialSize: isStruggling ? 128 * 1024 : 16 * 1024,
                 lazyLoadMaxDuration: 3 * 60,
                 liveBufferLatencyChasing: false,
