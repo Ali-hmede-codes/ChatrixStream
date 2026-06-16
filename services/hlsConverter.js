@@ -298,7 +298,11 @@ class HlsConverter {
         if (!state) return;
 
         if (state.ffmpegProcess) {
-            try { state.ffmpegProcess.kill(); } catch (e) { /* ignore */ }
+            try {
+                state.ffmpegProcess.stdout.destroy();
+                state.ffmpegProcess.stderr.destroy();
+                state.ffmpegProcess.kill('SIGKILL');
+            } catch (e) { /* ignore */ }
             state.ffmpegProcess = null;
         }
 
@@ -355,10 +359,11 @@ class HlsConverter {
         args.push('-nostdin');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
-        args.push('-analyzeduration', '5000000');
-        args.push('-probesize', '5000000');
-        args.push('-timeout', '15000000');
+        args.push('-analyzeduration', '1000000');
+        args.push('-probesize', '1000000');
+        args.push('-rw_timeout', '15000000');
         args.push('-reconnect', '1');
+        args.push('-reconnect_at_eof', '1');
         args.push('-reconnect_streamed', '1');
         args.push('-reconnect_delay_max', '10');
         args.push('-reconnect_on_network_error', '1');
@@ -700,7 +705,11 @@ class HlsConverter {
         if (state.startupTimer) clearTimeout(state.startupTimer);
         if (state.restartTimer) clearTimeout(state.restartTimer);
         if (state.ffmpegProcess) {
-            try { state.ffmpegProcess.kill(); } catch (e) { /* ignore */ }
+            try {
+                state.ffmpegProcess.stdout.destroy();
+                state.ffmpegProcess.stderr.destroy();
+                state.ffmpegProcess.kill('SIGKILL');
+            } catch (e) { /* ignore */ }
             state.ffmpegProcess = null;
         }
 
