@@ -65,20 +65,20 @@ const QUALITY_PRESETS = {
         copyVideo: false
     },
     high: {
-        videoCodec: 'libx264',
-        videoBitrate: '2500k',
-        videoMaxRate: '3000k',
-        videoBufSize: '5000k',
-        videoPreset: 'superfast',
-        videoTune: 'zerolatency',
-        videoProfile: 'high',
-        videoLevel: '4.1',
+        videoCodec: 'copy',
+        videoBitrate: null,
+        videoMaxRate: null,
+        videoBufSize: null,
+        videoPreset: null,
+        videoTune: null,
+        videoProfile: null,
+        videoLevel: null,
         videoResolution: null,
         audioBitrate: '128k',
         audioChannels: '2',
         audioRate: '48000',
         segmentDuration: 2,
-        copyVideo: false
+        copyVideo: true
     }
 };
 
@@ -611,6 +611,12 @@ class HlsConverter {
         if (!hasIndependentSegments) {
             lines.splice(insertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
+
+        // Add start offset to force players (like iOS Safari) to start playing 6 seconds behind the live edge
+        // This provides a safe buffer cushion to prevent immediate stalling on mobile
+        const startOffsetIdx = lines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
+        const finalInsertIdx = startOffsetIdx !== -1 ? startOffsetIdx + 1 : insertIdx;
+        lines.splice(finalInsertIdx, 0, '#EXT-X-START:TIME-OFFSET=-6.0');
 
         // Add discontinuity sequence tag if FFmpeg has restarted
         // This tells the player to expect timestamp jumps between segments

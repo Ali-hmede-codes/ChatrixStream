@@ -32,19 +32,19 @@ const QUALITY_PRESETS = {
         copyVideo: false
     },
     high: {
-        videoCodec: 'libx264',
-        videoBitrate: '2500k',
-        videoMaxRate: '3000k',
-        videoBufSize: '5000k',
-        videoPreset: 'superfast',
-        videoTune: 'zerolatency',
-        videoProfile: 'high',
-        videoLevel: '4.1',
+        videoCodec: 'copy',
+        videoBitrate: null,
+        videoMaxRate: null,
+        videoBufSize: null,
+        videoPreset: null,
+        videoTune: null,
+        videoProfile: null,
+        videoLevel: null,
         videoResolution: null,
         audioBitrate: '128k',
         audioChannels: '2',
         audioRate: '48000',
-        copyVideo: false
+        copyVideo: true
     }
 };
 
