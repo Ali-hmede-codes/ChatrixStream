@@ -1,0 +1,118 @@
+################################################
+# MediaMTX Configuration for ChatrixStream
+################################################
+
+################################################
+# Global settings -> General
+################################################
+logLevel: info
+logDestinations: [stdout]
+readTimeout: 10s
+writeTimeout: 10s
+writeQueueSize: 512
+
+################################################
+# Global settings -> Authentication
+################################################
+authMethod: internal
+authInternalUsers:
+  # Allow read access without credentials (Node.js handles auth before proxying)
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+        path:
+      - action: read
+        path:
+      - action: playback
+        path:
+  # Admin API access from localhost only
+  - user: admin
+    pass: changeme
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+################################################
+# Global settings -> Control API
+################################################
+api: true
+apiAddress: :9997
+apiAllowOrigins: ["*"]
+
+################################################
+# Global settings -> Metrics
+################################################
+metrics: false
+metricsAddress: :9998
+
+################################################
+# Global settings -> RTSP server
+################################################
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+################################################
+# Global settings -> RTMP server
+################################################
+rtmp: false
+
+################################################
+# Global settings -> HLS server
+################################################
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ["*"]
+# Generate HLS only when requested (saves resources)
+hlsAlwaysRemux: false
+# Use mpegts variant for maximum compatibility (Safari, iOS, video.js)
+hlsVariant: mpegts
+# Number of segments to keep in the playlist
+hlsSegmentCount: 7
+# Segment duration — 2s matches previous FFmpeg setting
+hlsSegmentDuration: 2s
+# Max segment size to prevent RAM exhaustion
+hlsSegmentMaxSize: 50M
+# Close muxer after no readers for 60s
+hlsMuxerCloseAfter: 60s
+
+################################################
+# Global settings -> WebRTC server
+################################################
+webrtc: false
+
+################################################
+# Global settings -> SRT server
+################################################
+srt: false
+
+################################################
+# Global settings -> MoQ server
+################################################
+moq: false
+
+################################################
+# Default path settings
+################################################
+pathDefaults:
+  # Source is a publisher by default (overridden by dynamic paths)
+  source: publisher
+  # Pull source only when readers are connected
+  sourceOnDemand: true
+  # Time to wait for source to become ready
+  sourceOnDemandStartTimeout: 30s
+  # Close source when no readers for this long
+  sourceOnDemandCloseAfter: 60s
+  # Maximum number of concurrent readers per path
+  maxReaders: 0
+
+################################################
+# Path settings
+################################################
+paths:
+  # All other paths are created dynamically via the Control API
+  all_others:

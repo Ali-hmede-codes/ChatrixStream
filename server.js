@@ -2,13 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
-const ffmpegStatic = require('ffmpeg-static');
 const initDB = require('./db/init');
-const { validateSession } = require('./services/codeGenerator');
 const { seedAdminUsers } = require('./services/adminUser');
-const StreamManager = require('./services/streamManager');
-const HlsConverter = require('./services/hlsConverter');
-const PipeConverter = require('./services/pipeConverter');
+const MediaMTXManager = require('./services/mediamtxManager');
 const rateLimiter = require('./middleware/rateLimiter');
 const adminRoutes = require('./routes/admin');
 const adminLoginRoutes = require('./routes/adminLogin');
@@ -20,29 +16,13 @@ const sseRoutes = require('./routes/sse');
 
 const db = initDB(process.env.DB_PATH);
 seedAdminUsers(db);
-const streamManager = new StreamManager({
-    highWaterMark: parseInt(process.env.STREAM_HIGH_WATER_MARK) || 2097152,
-    idleTimeout: parseInt(process.env.STREAM_IDLE_TIMEOUT_MS) || 30000,
-    reconnectDelay: parseInt(process.env.STREAM_RECONNECT_DELAY_MS) || 2000,
-    sourceTimeout: parseInt(process.env.STREAM_SOURCE_TIMEOUT_MS) || 15000
-});
-const hlsConverter = new HlsConverter({
-    tempDir: process.env.HLS_TEMP_DIR || undefined,
-    segmentDuration: parseInt(process.env.HLS_SEGMENT_DURATION) || 2,
-    listSize: parseInt(process.env.HLS_LIST_SIZE) || 5,
-    idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
-    idleGrace: parseInt(process.env.HLS_IDLE_GRACE_MS) || 5000,
-    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
-    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 10,
-    manifestWaitTimeout: parseInt(process.env.HLS_MANIFEST_WAIT_TIMEOUT_MS) || 15000,
-    startupTimeout: parseInt(process.env.HLS_STARTUP_TIMEOUT_MS) || 60000,
-    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
-});
-const pipeConverter = new PipeConverter({
-    idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
-    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
-    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 15,
-    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
+
+const mediamtxManager = new MediaMTXManager({
+    apiUrl: process.env.MEDIAMTX_API_URL || 'http://localhost:9997',
+    hlsUrl: process.env.MEDIAMTX_HLS_URL || 'http://localhost:8888',
+    rtspUrl: process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554',
+    idleTimeout: parseInt(process.env.MEDIAMTX_IDLE_TIMEOUT_MS) || 60000,
+    startupTimeout: parseInt(process.env.MEDIAMTX_STARTUP_TIMEOUT_MS) || 30000
 });
 
 const app = express();
@@ -85,12 +65,12 @@ app.use((req, res, next) => {
 const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
-app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
+app.use('/api/admin', adminLimiter, adminRoutes(db, mediamtxManager));
 app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
-app.use('/channel', streamRoutes(db, streamManager));
-app.use('/hls', hlsRoutes(db, hlsConverter));
-app.use('/pipe', pipeRoutes(db, pipeConverter));
+app.use('/channel', streamRoutes(db, mediamtxManager));
+app.use('/hls', hlsRoutes(db, mediamtxManager));
+app.use('/pipe', pipeRoutes(db, mediamtxManager));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -123,9 +103,7 @@ function cleanupExpired() {
 
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at IS NOT NULL AND link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
-        streamManager.stopAllStreamsForChannel(ch.id);
-        hlsConverter.stopAllForChannel(ch.id);
-        pipeConverter.stopAllForChannel(ch.id);
+        mediamtxManager.removeAllForChannel(ch.id);
         db.prepare('UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?').run(now, ch.id, now);
     }
 
@@ -135,9 +113,7 @@ function cleanupExpired() {
         if (!isExpiredChannel) {
             const remainingValid = db.prepare('SELECT COUNT(*) as cnt FROM sessions WHERE channel_id = ? AND expires_at > ?').get(channelId, now);
             if (remainingValid.cnt === 0) {
-                streamManager.stopAllStreamsForChannel(channelId);
-                hlsConverter.stopAllForChannel(channelId);
-                pipeConverter.stopAllForChannel(channelId);
+                mediamtxManager.removeAllForChannel(channelId);
             }
         }
     }
@@ -154,8 +130,8 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown() {
     console.log('Shutting down...');
-    hlsConverter.stopAll();
-    pipeConverter.stopAll();
+    mediamtxManager.destroy();
+    mediamtxManager.removeAll().catch(() => {});
     server.close(() => {
         process.exit(0);
     });
