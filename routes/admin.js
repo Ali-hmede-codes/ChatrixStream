@@ -16,7 +16,7 @@ function normalizeToUTC(dateStr) {
     }
 }
 
-module.exports = function(db, streamManager, hlsConverter) {
+module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
     const router = express.Router();
     router.use(adminAuth);
 
@@ -86,6 +86,8 @@ module.exports = function(db, streamManager, hlsConverter) {
     router.delete('/channels/:id', (req, res) => {
         const { id } = req.params;
         streamManager.stopAllStreamsForChannel(parseInt(id));
+        if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
+        if (pipeConverter) pipeConverter.stopAllForChannel(parseInt(id));
         deleteChannelById.run(id);
         res.json({ deleted: true });
     });
@@ -176,6 +178,7 @@ module.exports = function(db, streamManager, hlsConverter) {
             if (isExpired) {
                 streamManager.stopAllStreamsForChannel(parseInt(id));
                 if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
+                if (pipeConverter) pipeConverter.stopAllForChannel(parseInt(id));
             }
         }
 
