@@ -65,7 +65,6 @@ rtmp: false
 ################################################
 hls: true
 hlsAddress: :8888
-hlsAllowOrigins: ["*"]
 # Generate HLS only when requested (saves resources)
 hlsAlwaysRemux: true
 # Use mpegts variant for maximum compatibility (Safari, iOS, video.js)
