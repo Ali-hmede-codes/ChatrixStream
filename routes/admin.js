@@ -16,7 +16,7 @@ function normalizeToUTC(dateStr) {
     }
 }
 
-module.exports = function(db, mediamtxManager) {
+module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
     const router = express.Router();
     router.use(adminAuth);
 
@@ -83,14 +83,16 @@ module.exports = function(db, mediamtxManager) {
         res.json(enriched);
     });
 
-    router.delete('/channels/:id', async (req, res) => {
+    router.delete('/channels/:id', (req, res) => {
         const { id } = req.params;
-        await mediamtxManager.removeAllForChannel(parseInt(id));
+        streamManager.stopAllStreamsForChannel(parseInt(id));
+        if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
+        if (pipeConverter) pipeConverter.stopAllForChannel(parseInt(id));
         deleteChannelById.run(id);
         res.json({ deleted: true });
     });
 
-    router.patch('/channels/:id', async (req, res) => {
+    router.patch('/channels/:id', (req, res) => {
         const { id } = req.params;
         const { name, code_required, code_ttl_hours, link_expires_at } = req.body;
 
@@ -174,7 +176,9 @@ module.exports = function(db, mediamtxManager) {
         if (effectiveLinkExpiresAt) {
             const isExpired = new Date(effectiveLinkExpiresAt) <= new Date();
             if (isExpired) {
-                await mediamtxManager.removeAllForChannel(parseInt(id));
+                streamManager.stopAllStreamsForChannel(parseInt(id));
+                if (hlsConverter) hlsConverter.stopAllForChannel(parseInt(id));
+                if (pipeConverter) pipeConverter.stopAllForChannel(parseInt(id));
             }
         }
 
@@ -208,10 +212,10 @@ module.exports = function(db, mediamtxManager) {
         res.json(quality);
     });
 
-    router.delete('/channels/:id/qualities/:qid', async (req, res) => {
+    router.delete('/channels/:id/qualities/:qid', (req, res) => {
         const { id, qid } = req.params;
         const quality = getQualityById.get(qid, id);
-        if (quality) await mediamtxManager.removePath(parseInt(id), quality.quality_label);
+        if (quality) streamManager.stopStream(parseInt(id), quality.quality_label);
         deleteQualityById.run(qid, id);
         res.json({ deleted: true });
     });

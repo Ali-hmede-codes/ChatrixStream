@@ -2,10 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const ffmpegStatic = require('ffmpeg-static');
 const initDB = require('./db/init');
+const { validateSession } = require('./services/codeGenerator');
 const { seedAdminUsers } = require('./services/adminUser');
-const MediaMTXManager = require('./services/mediamtxManager');
-const FFmpegBridge = require('./services/ffmpegBridge');
+const StreamManager = require('./services/streamManager');
+const HlsConverter = require('./services/hlsConverter');
+const PipeConverter = require('./services/pipeConverter');
 const rateLimiter = require('./middleware/rateLimiter');
 const adminRoutes = require('./routes/admin');
 const adminLoginRoutes = require('./routes/adminLogin');
@@ -17,30 +20,29 @@ const sseRoutes = require('./routes/sse');
 
 const db = initDB(process.env.DB_PATH);
 seedAdminUsers(db);
-
-const ffmpegBridge = new FFmpegBridge({
-    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
-    rtspHost: (process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554').replace('rtsp://', '').split(':')[0] || 'localhost',
-    rtspPort: parseInt((process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554').replace('rtsp://', '').split(':')[1]) || 8554,
-    restartDelay: parseInt(process.env.FFMPEG_RESTART_DELAY_MS) || 3000,
-    maxRestartAttempts: parseInt(process.env.FFMPEG_MAX_RESTART_ATTEMPTS) || 5
+const streamManager = new StreamManager({
+    highWaterMark: parseInt(process.env.STREAM_HIGH_WATER_MARK) || 2097152,
+    idleTimeout: parseInt(process.env.STREAM_IDLE_TIMEOUT_MS) || 30000,
+    reconnectDelay: parseInt(process.env.STREAM_RECONNECT_DELAY_MS) || 2000,
+    sourceTimeout: parseInt(process.env.STREAM_SOURCE_TIMEOUT_MS) || 15000
 });
-
-const mediamtxManager = new MediaMTXManager({
-    apiUrl: process.env.MEDIAMTX_API_URL || 'http://localhost:9997',
-    hlsUrl: process.env.MEDIAMTX_HLS_URL || 'http://localhost:8888',
-    rtspUrl: process.env.MEDIAMTX_RTSP_URL || 'rtsp://localhost:8554',
-    idleTimeout: parseInt(process.env.MEDIAMTX_IDLE_TIMEOUT_MS) || 120000,
-    startupTimeout: parseInt(process.env.MEDIAMTX_STARTUP_TIMEOUT_MS) || 45000,
-    ffmpegBridge: ffmpegBridge
+const hlsConverter = new HlsConverter({
+    tempDir: process.env.HLS_TEMP_DIR || undefined,
+    segmentDuration: parseInt(process.env.HLS_SEGMENT_DURATION) || 2,
+    listSize: parseInt(process.env.HLS_LIST_SIZE) || 5,
+    idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
+    idleGrace: parseInt(process.env.HLS_IDLE_GRACE_MS) || 5000,
+    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
+    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 10,
+    manifestWaitTimeout: parseInt(process.env.HLS_MANIFEST_WAIT_TIMEOUT_MS) || 15000,
+    startupTimeout: parseInt(process.env.HLS_STARTUP_TIMEOUT_MS) || 60000,
+    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
 });
-
-ffmpegBridge.isFFmpegAvailable().then(function(available) {
-    if (available) {
-        console.log('FFmpegBridge: ffmpeg is available');
-    } else {
-        console.warn('FFmpegBridge: ffmpeg is NOT available — HTTP source streams will not work. Install ffmpeg and add it to PATH.');
-    }
+const pipeConverter = new PipeConverter({
+    idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
+    restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
+    maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 15,
+    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
 });
 
 const app = express();
@@ -75,7 +77,7 @@ app.use(cors({
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' blob: https://cdn.jsdelivr.net http: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; media-src 'self' blob: http: https:; img-src 'self' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' blob: https://cdn.jsdelivr.net http: https:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; media-src 'self' blob: http: https:; img-src 'self' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net");
     res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     next();
 });
@@ -83,12 +85,12 @@ app.use((req, res, next) => {
 const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
-app.use('/api/admin', adminLimiter, adminRoutes(db, mediamtxManager));
+app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
 app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
-app.use('/channel', streamRoutes(db, mediamtxManager));
-app.use('/hls', hlsRoutes(db, mediamtxManager));
-app.use('/pipe', pipeRoutes(db, mediamtxManager));
+app.use('/channel', streamRoutes(db, streamManager));
+app.use('/hls', hlsRoutes(db, hlsConverter));
+app.use('/pipe', pipeRoutes(db, pipeConverter));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -121,7 +123,9 @@ function cleanupExpired() {
 
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at IS NOT NULL AND link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
-        mediamtxManager.removeAllForChannel(ch.id);
+        streamManager.stopAllStreamsForChannel(ch.id);
+        hlsConverter.stopAllForChannel(ch.id);
+        pipeConverter.stopAllForChannel(ch.id);
         db.prepare('UPDATE sessions SET expires_at = ? WHERE channel_id = ? AND expires_at > ?').run(now, ch.id, now);
     }
 
@@ -131,7 +135,9 @@ function cleanupExpired() {
         if (!isExpiredChannel) {
             const remainingValid = db.prepare('SELECT COUNT(*) as cnt FROM sessions WHERE channel_id = ? AND expires_at > ?').get(channelId, now);
             if (remainingValid.cnt === 0) {
-                mediamtxManager.removeAllForChannel(channelId);
+                streamManager.stopAllStreamsForChannel(channelId);
+                hlsConverter.stopAllForChannel(channelId);
+                pipeConverter.stopAllForChannel(channelId);
             }
         }
     }
@@ -148,9 +154,8 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown() {
     console.log('Shutting down...');
-    ffmpegBridge.destroy();
-    mediamtxManager.destroy();
-    mediamtxManager.removeAll().catch(() => {});
+    hlsConverter.stopAll();
+    pipeConverter.stopAll();
     server.close(() => {
         process.exit(0);
     });

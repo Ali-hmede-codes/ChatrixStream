@@ -5,6 +5,3 @@ database.sqlite-wal
 .env
 *.log
 logs/
-tmp/
-mediamtx.exe
-mediamtx

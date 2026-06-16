@@ -38,10 +38,7 @@
     let NORMAL_PLAYBACK_RATE = 1.0;
 
     var usePipeMode = false;
-    var mpegtsPlayerInstance = null; // No longer used — kept for compatibility
-
-    // With MediaMTX, all streams use HLS. Pipe mode (raw MPEG-TS) is no
-    // longer needed since MediaMTX handles all protocol conversion server-side.
+    var mpegtsPlayerInstance = null;
 
     function trackBandwidth() {
         if (bandwidthUpdateInterval) clearInterval(bandwidthUpdateInterval);
@@ -299,10 +296,10 @@
 
         channelName.textContent = channelInfo.channel_name;
 
-        // With MediaMTX, all clients use HLS (MediaMTX handles protocol conversion)
-        // iOS Safari gets native HLS; all others get native HLS too (well-supported)
-        usePipeMode = false;
-        console.log('Player mode: hls (MediaMTX)');
+        // Detect pipe mode: use mpegts.js direct pipe for non-iOS/Safari
+        // iOS Safari doesn't support MSE well for live streaming, so it uses HLS
+        usePipeMode = !isIOS() && !isSafari() && typeof mpegts !== 'undefined' && mpegts.isSupported();
+        console.log('Player mode:', usePipeMode ? 'pipe (mpegts.js)' : 'hls (native html5)');
 
         if (channelInfo.expires_at) {
             const expires = new Date(channelInfo.expires_at);
@@ -373,9 +370,98 @@
 
     // tryAutoDowngrade logic removed. Quality shifts are strictly manual to prevent reset glitches.
 
+    // Creates a wrapper around the native <video> element that mimics
+    // the Video.js player API so all existing code works transparently
+    function createMpegtsWrapper() {
+        var eventMap = {};
+        var fullscreenState = false;
+
+        var wrapper = {
+            play: function() { return videoEl.play(); },
+            pause: function() { videoEl.pause(); },
+            paused: function() { return videoEl.paused; },
+            ended: function() { return videoEl.ended; },
+            muted: function(val) {
+                if (val !== undefined) { videoEl.muted = val; return wrapper; }
+                return videoEl.muted;
+            },
+            currentTime: function(val) {
+                if (val !== undefined) { videoEl.currentTime = val; return wrapper; }
+                return videoEl.currentTime;
+            },
+            seekable: function() { return videoEl.seekable; },
+            buffered: function() { return videoEl.buffered; },
+            playbackRate: function(val) {
+                if (val !== undefined) { videoEl.playbackRate = val; return wrapper; }
+                return videoEl.playbackRate;
+            },
+            src: function() { /* handled by setVideoSource */ },
+            reset: function() {
+                if (mpegtsPlayerInstance) {
+                    try { mpegtsPlayerInstance.pause(); } catch(e) {}
+                    try { mpegtsPlayerInstance.unload(); } catch(e) {}
+                    try { mpegtsPlayerInstance.detachMediaElement(); } catch(e) {}
+                    try { mpegtsPlayerInstance.destroy(); } catch(e) {}
+                    mpegtsPlayerInstance = null;
+                }
+                videoEl.removeAttribute('src');
+                try { videoEl.load(); } catch(e) {}
+            },
+            error: function() {
+                var e = videoEl.error;
+                if (!e) return null;
+                return { code: e.code, message: e.message || '' };
+            },
+            on: function(event, fn) {
+                if (!eventMap[event]) eventMap[event] = [];
+                eventMap[event].push(fn);
+                videoEl.addEventListener(event, fn);
+                return wrapper;
+            },
+            ready: function(fn) { setTimeout(fn, 0); },
+            isFullscreen: function() { return fullscreenState; },
+            requestFullscreen: function() {
+                var container = document.getElementById('video-container');
+                if (container.requestFullscreen) container.requestFullscreen();
+                else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+            },
+            exitFullscreen: function() {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            },
+            tech: function() {
+                return {
+                    vhs: mpegtsPlayerInstance ? { bandwidth: wrapper._getBandwidth() } : null,
+                    el: function() { return videoEl; }
+                };
+            },
+            _getBandwidth: function() {
+                if (mpegtsPlayerInstance && mpegtsPlayerInstance.statisticsInfo) {
+                    return (mpegtsPlayerInstance.statisticsInfo.speed || 0) * 8 * 1024;
+                }
+                return null;
+            },
+            liveTracker: null
+        };
+
+        document.addEventListener('fullscreenchange', function() {
+            fullscreenState = !!document.fullscreenElement;
+        });
+        document.addEventListener('webkitfullscreenchange', function() {
+            fullscreenState = !!(document.webkitFullscreenElement || document.fullscreenElement);
+        });
+
+        return wrapper;
+    }
+
     function initPlayer() {
-        // With MediaMTX, all streams use HLS
-        vjsPlayer = createNativeHlsWrapper();
+        if (usePipeMode) {
+            // Pipe mode: use native <video> + mpegts.js, no Video.js needed
+            vjsPlayer = createMpegtsWrapper();
+        } else {
+            // HLS mode: use native <video> with HLS natively supported by Safari
+            vjsPlayer = createNativeHlsWrapper();
+        }
 
         videoEl.classList.remove('video-js', 'vjs-default-skin');
         videoEl.style.width = '100%';
@@ -472,29 +558,11 @@
                     vjsPlayer.reset();
                     startStream(currentQuality);
                 } else if (code === 4) {
-                    // Check if this is a 503 (stream not ready or MediaMTX down) — retryable
+                    // Check if this is a 503 (stream not ready) — retryable
                     var is503 = message.indexOf('503') !== -1 || message.indexOf('Service Unavailable') !== -1;
-                    var isMediaServerDown = message.indexOf('media_server_not_available') !== -1;
-                    var isSourceUnreachable = message.indexOf('source_unreachable') !== -1;
-                    if (isSourceUnreachable) {
-                        // Source stream is down — stop reconnecting, show clear error
-                        console.error('Stream source is unreachable (offline)');
-                        destroyPlayer();
-                        showError('Stream Offline', 'The stream source is currently unreachable. The broadcaster may be offline.');
-                        errorBtn.textContent = 'Retry';
-                        errorBtn.onclick = function() {
-                            reconnectAttempts = 0;
-                            reconnectBackoff = 2000;
-                            errorOverlay.classList.add('hidden');
-                            startStream(currentQuality || getAvailableQualities()[0]?.label);
-                        };
-                    } else if (is503 || isMediaServerDown) {
-                        console.warn('Stream server unavailable (503), waiting and retrying...');
-                        // Show a more helpful message if MediaMTX is down
-                        if (isMediaServerDown || (reconnectAttempts >= 3 && is503)) {
-                            showLoading('Stream server is starting up, please wait...');
-                        }
-                        // Use longer delay for 503 — stream/server may still be starting up
+                    if (is503) {
+                        console.warn('Stream not ready (503), waiting and retrying...');
+                        // Use longer delay for 503 — stream is still starting up
                         scheduleReconnect(5000);
                     } else {
                         console.warn('Source error (code 4), reconnecting...');
@@ -611,9 +679,13 @@
             manifestReadyCheckTimer = null;
         }
 
-        // All streams use HLS with MediaMTX
-        // Poll manifest-ready endpoint before setting video source
-        // This prevents the player from requesting an m3u8 that returns 503
+        // Pipe mode: skip manifest polling, connect directly
+        if (usePipeMode) {
+            setVideoSource(quality);
+            return;
+        }
+
+        // Determine minSegments based on current network bandwidth
         var minSegments = 3;
         if (isVeryLowBandwidth()) {
             minSegments = 5;
@@ -638,11 +710,11 @@
             }).then(function(res) {
                 if (res.status === 403) {
                     return res.json().then(function(data) {
-                        return { expired: true, error: data.error || 'Session expired', ready: false };
+                        if (data.expired) {
+                            handleSessionExpired(data.error || 'Session expired');
+                        }
+                        return null;
                     });
-                }
-                if (res.status === 404) {
-                    return { ready: false, notFound: true };
                 }
                 return res.json();
             }).then(function(data) {
@@ -650,35 +722,15 @@
                 if (currentQuality !== quality) return;
 
                 if (data.ready) {
+                    // Manifest is ready — now set the source
                     setVideoSource(quality);
-                } else if (data.needsFFmpeg) {
-                    destroyPlayer();
-                    showError('Server Error', data.error || 'ffmpeg is not installed on the server. HTTP source streams require ffmpeg.');
-                    errorBtn.textContent = 'Retry';
-                    errorBtn.onclick = function() {
-                        reconnectAttempts = 0;
-                        reconnectBackoff = 2000;
-                        errorOverlay.classList.add('hidden');
-                        startStream(currentQuality || getAvailableQualities()[0]?.label);
-                    };
-                    return;
-                } else if (data.expired) {
-                    handleSessionExpired(data.error || 'Session expired');
-                    return;
                 } else if (manifestPollAttempts < maxManifestPollAttempts) {
                     showLoading('Starting ' + quality.toUpperCase() + ' stream... (' + manifestPollAttempts + 's)');
                     manifestReadyCheckTimer = setTimeout(pollManifestReady, manifestPollInterval);
                 } else {
-                    console.warn('Manifest ready timeout after', manifestPollAttempts, 'polls');
-                    destroyPlayer();
-                    showError('Stream Not Available', 'The stream could not be started after ' + manifestPollAttempts + ' seconds. The source may be offline or unreachable.');
-                    errorBtn.textContent = 'Retry';
-                    errorBtn.onclick = function() {
-                        reconnectAttempts = 0;
-                        reconnectBackoff = 2000;
-                        errorOverlay.classList.add('hidden');
-                        startStream(currentQuality || getAvailableQualities()[0]?.label);
-                    };
+                    // Timeout — try setting source anyway, it might work now
+                    console.warn('Manifest ready timeout, attempting to play anyway');
+                    setVideoSource(quality);
                 }
             }).catch(function() {
                 // Network error — try setting source anyway
@@ -694,7 +746,79 @@
     }
 
     function setVideoSource(quality) {
-        // All streams use HLS now — MediaMTX handles the server-side processing
+        if (usePipeMode) {
+            // Pipe mode: use mpegts.js to connect to the pipe stream
+            var pipeUrl = getPipeUrl(quality);
+
+            // Cleanup previous mpegts instance
+            if (mpegtsPlayerInstance) {
+                try { mpegtsPlayerInstance.pause(); } catch(e) {}
+                try { mpegtsPlayerInstance.unload(); } catch(e) {}
+                try { mpegtsPlayerInstance.detachMediaElement(); } catch(e) {}
+                try { mpegtsPlayerInstance.destroy(); } catch(e) {}
+                mpegtsPlayerInstance = null;
+            }
+
+            var isStruggling = isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling();
+            mpegtsPlayerInstance = mpegts.createPlayer({
+                type: 'mpegts',
+                isLive: true,
+                url: pipeUrl
+            }, {
+                enableWorker: true,
+                enableStashBuffer: true,
+                stashInitialSize: isStruggling ? 128 * 1024 : 16 * 1024,
+                lazyLoadMaxDuration: 3 * 60,
+                liveBufferLatencyChasing: false,
+                autoCleanupSourceBuffer: true,
+                autoCleanupMaxBackwardDuration: 20,
+                autoCleanupMinBackwardDuration: 10,
+                fixAudioTimestampGap: true
+            });
+
+            // mpegts.js error handling
+            mpegtsPlayerInstance.on(mpegts.Events.ERROR, function(errorType, errorDetail, errorInfo) {
+                console.error('mpegts error:', errorType, errorDetail, errorInfo);
+                if (sessionExpired) return;
+
+                if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
+                    checkSessionExpired().then(function(expired) {
+                        if (expired) {
+                            handleSessionExpired('Session expired');
+                            return;
+                        }
+                        consecutiveNetworkErrors++;
+                        console.warn('Pipe: network error, reconnecting... (attempt ' + consecutiveNetworkErrors + ')');
+                        scheduleReconnect();
+                    });
+                } else if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
+                    console.warn('Pipe: media error, reloading...');
+                    softResetPlayer();
+                    vjsPlayer.reset();
+                    startStream(currentQuality);
+                }
+            });
+
+            mpegtsPlayerInstance.on(mpegts.Events.LOADING_COMPLETE, function() {
+                if (!sessionExpired && currentQuality) {
+                    console.warn('Pipe: stream ended, reconnecting...');
+                    scheduleReconnect();
+                }
+            });
+
+            mpegtsPlayerInstance.attachMediaElement(videoEl);
+            mpegtsPlayerInstance.load();
+
+            videoEl.play().catch(function(err) {
+                console.warn('Autoplay blocked:', err);
+                videoEl.muted = true;
+                unmuteBtn.classList.remove('hidden');
+                videoEl.play().catch(function() {});
+            });
+            return;
+        }
+
+        // HLS mode: use Video.js source
         var hlsUrl = getHlsUrl(quality);
 
         vjsPlayer.src({
@@ -753,10 +877,19 @@
         reconnectBackoff = 2000;
         reconnectAttempts = 0;
 
+        // Cleanup mpegts.js instance if in pipe mode
+        if (mpegtsPlayerInstance) {
+            try { mpegtsPlayerInstance.pause(); } catch(e) {}
+            try { mpegtsPlayerInstance.unload(); } catch(e) {}
+            try { mpegtsPlayerInstance.detachMediaElement(); } catch(e) {}
+            try { mpegtsPlayerInstance.destroy(); } catch(e) {}
+            mpegtsPlayerInstance = null;
+        }
+
         if (vjsPlayer) {
             vjsPlayer.playbackRate(NORMAL_PLAYBACK_RATE);
             vjsPlayer.reset();
-            vjsPlayer.pause();
+            if (!usePipeMode) vjsPlayer.pause();
         }
 
         currentQuality = null;
