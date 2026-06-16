@@ -149,6 +149,26 @@ class PipeConverter {
             return state;
         }
 
+        const preset = this._resolvePreset(qualityLabel, qualityConfig);
+        
+        // Parse bitrates to compute rolling buffer size (target: ~3 seconds of data)
+        const parseBitrate = (str) => {
+            if (!str) return 0;
+            const match = str.match(/^(\d+)(k|m)?/i);
+            if (!match) return 0;
+            const num = parseInt(match[1]);
+            const unit = (match[2] || '').toLowerCase();
+            if (unit === 'm') return num * 1000000;
+            if (unit === 'k') return num * 1000;
+            return num;
+        };
+
+        const vBitrate = parseBitrate(preset.videoBitrate) || 1000000;
+        const aBitrate = parseBitrate(preset.audioBitrate) || 128000;
+        const totalBitrateBps = vBitrate + aBitrate;
+        // 3 seconds buffer size in bytes, with a minimum of 256KB to ensure safe startup
+        const dynamicRollingBufferSize = Math.max(256 * 1024, Math.ceil((totalBitrateBps / 8) * 3));
+
         state = {
             ffmpegProcess: null,
             clients: new Set(),
@@ -166,7 +186,8 @@ class PipeConverter {
             // Rolling buffer: stores recent MPEG-TS data so new clients
             // can start playing immediately without waiting for a keyframe
             recentChunks: [],
-            recentChunksSize: 0
+            recentChunksSize: 0,
+            rollingBufferSize: dynamicRollingBufferSize
         };
 
         this.activeStreams.set(key, state);
@@ -318,7 +339,7 @@ class PipeConverter {
             // Store in rolling buffer for new client catch-up
             state.recentChunks.push(chunk);
             state.recentChunksSize += chunk.length;
-            while (state.recentChunksSize > this.rollingBufferSize && state.recentChunks.length > 1) {
+            while (state.recentChunksSize > state.rollingBufferSize && state.recentChunks.length > 1) {
                 const removed = state.recentChunks.shift();
                 state.recentChunksSize -= removed.length;
             }

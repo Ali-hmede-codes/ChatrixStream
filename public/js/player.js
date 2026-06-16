@@ -763,21 +763,23 @@
                 mpegtsPlayerInstance = null;
             }
 
+            var isStruggling = isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling();
             mpegtsPlayerInstance = mpegts.createPlayer({
                 type: 'mpegts',
                 isLive: true,
                 url: pipeUrl
             }, {
                 enableWorker: true,
+                enableStashBuffer: !isStruggling,
+                stashInitialSize: isStruggling ? 128 * 1024 : 16 * 1024,
                 lazyLoadMaxDuration: 3 * 60,
                 liveBufferLatencyChasing: true,
-                liveBufferLatencyMaxLatency: 10,
-                liveBufferLatencyMinRemain: 2,
+                liveBufferLatencyMaxLatency: isStruggling ? 8 : 4,
+                liveBufferLatencyMinRemain: isStruggling ? 3 : 1.5,
                 autoCleanupSourceBuffer: true,
-                autoCleanupMaxBackwardDuration: 30,
-                autoCleanupMinBackwardDuration: 15,
-                fixAudioTimestampGap: true,
-                stashInitialSize: 128 * 1024
+                autoCleanupMaxBackwardDuration: 20,
+                autoCleanupMinBackwardDuration: 10,
+                fixAudioTimestampGap: true
             });
 
             // mpegts.js error handling
