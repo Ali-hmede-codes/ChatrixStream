@@ -68,7 +68,7 @@ hls: true
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 # Generate HLS only when requested (saves resources)
-hlsAlwaysRemux: false
+hlsAlwaysRemux: true
 # Use mpegts variant for maximum compatibility (Safari, iOS, video.js)
 hlsVariant: mpegts
 # Number of segments to keep in the playlist
@@ -115,4 +115,3 @@ pathDefaults:
 ################################################
 paths:
   # All other paths are created dynamically via the Control API
-  all_others:

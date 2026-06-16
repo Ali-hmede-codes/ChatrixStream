@@ -182,34 +182,94 @@ class MediaMTXManager {
 
     /**
      * Check if a path's source is ready (stream is available).
+     * MediaMTX API wraps the response in { item: { ... } }.
      */
     async isPathReady(channelId, qualityLabel) {
         const pathName = this.getPathName(channelId, qualityLabel);
         try {
             const result = await this._apiRequest('GET', '/v3/paths/get/' + pathName);
-            // If we get here, the path exists and is configured
-            // Check if the source is ready (has tracks/ready status)
-            if (result && result.ready !== undefined) {
-                return result.ready;
+            // MediaMTX v3 API wraps in { item: { ready: bool, ... } }
+            const item = result && result.item ? result.item : result;
+            if (item && item.ready !== undefined) {
+                return item.ready;
             }
-            // If path exists in the API, it's considered ready enough
-            return true;
+            // If path exists in the API but no ready field, check for tracks
+            if (item && item.tracks && item.tracks.length > 0) {
+                return true;
+            }
+            // Path config exists but source not connected yet
+            return false;
         } catch (e) {
             if (e.statusCode === 404) return false;
             // API error — assume not ready
+            console.error('MediaMTXManager: isPathReady error for', pathName, e.message);
             return false;
         }
     }
 
     /**
+     * Trigger MediaMTX to start pulling from the source by making a
+     * lightweight request to the HLS endpoint. This is needed because
+     * sourceOnDemand only activates when a reader connects to the HLS muxer,
+     * not when the path is created via the API.
+     *
+     * Returns true if the HLS endpoint starts responding.
+     */
+    async triggerSource(channelId, qualityLabel) {
+        const pathName = this.getPathName(channelId, qualityLabel);
+        const hlsUrl = this.hlsUrl + '/' + pathName + '/index.m3u8';
+
+        return new Promise((resolve) => {
+            const url = new URL(hlsUrl);
+            const isHttps = url.protocol === 'https:';
+            const requester = isHttps ? require('https') : http;
+
+            const options = {
+                hostname: url.hostname,
+                port: url.port || (isHttps ? 443 : 80),
+                path: url.pathname + url.search,
+                method: 'GET',
+                headers: {
+                    'Accept': '*/*',
+                    'User-Agent': 'ChatrixStream-Warmup/1.0'
+                },
+                timeout: 5000
+            };
+
+            const req = requester.request(options, (res) => {
+                // Consume the response body to free the socket
+                res.resume();
+                // Any response (even 404) means MediaMTX is processing the request
+                // which triggers sourceOnDemand to start pulling
+                resolve(res.statusCode === 200);
+            });
+
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(false);
+            });
+            req.end();
+        });
+    }
+
+    /**
      * Wait for a path's source to become ready, polling until timeout.
+     * Also triggers the HLS muxer to start pulling the source.
      */
     async waitForPathReady(channelId, qualityLabel, timeoutMs) {
         const maxWait = timeoutMs || this.startupTimeout;
         const startTime = Date.now();
         const pollInterval = 1000;
+        let triggered = false;
 
         while (Date.now() - startTime < maxWait) {
+            // Trigger the source on first poll — this kicks sourceOnDemand
+            if (!triggered) {
+                this.triggerSource(channelId, qualityLabel).catch(() => {});
+                triggered = true;
+            }
+
             const ready = await this.isPathReady(channelId, qualityLabel);
             if (ready) return true;
 

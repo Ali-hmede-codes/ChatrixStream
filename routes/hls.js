@@ -275,6 +275,9 @@ module.exports = function(db, mediamtxManager) {
             await mediamtxManager.ensurePath(channel.id, quality.quality_label, quality.stream_url, quality);
         } catch (e) { /* ignore */ }
 
+        // Trigger MediaMTX to start pulling the source (sourceOnDemand needs a reader)
+        mediamtxManager.triggerSource(channel.id, quality.quality_label).catch(() => {});
+
         // Check if MediaMTX has the stream ready
         const ready = await mediamtxManager.isPathReady(channel.id, quality.quality_label);
 
