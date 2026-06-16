@@ -29,7 +29,20 @@ function resolveRedirect(urlStr, timeoutMs = 5000) {
             }
 
             const req = client.get(urlStr, reqOptions, (res) => {
-                const finalUrl = res.responseUrl || urlStr;
+                let finalUrl = res.responseUrl || urlStr;
+                try {
+                    const originalUrl = new URL(urlStr);
+                    if (originalUrl.username || originalUrl.password) {
+                        const finalParsed = new URL(finalUrl);
+                        if (!finalParsed.username && !finalParsed.password) {
+                            finalParsed.username = originalUrl.username;
+                            finalParsed.password = originalUrl.password;
+                            finalUrl = finalParsed.toString();
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parsing errors
+                }
                 res.destroy(); // Destroy immediately to stop reading data
                 resolve(finalUrl);
             });
