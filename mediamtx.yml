@@ -8,8 +8,8 @@
 ################################################
 logLevel: info
 logDestinations: [stdout]
-readTimeout: 10s
-writeTimeout: 10s
+readTimeout: 30s
+writeTimeout: 30s
 writeQueueSize: 512
 
 ################################################

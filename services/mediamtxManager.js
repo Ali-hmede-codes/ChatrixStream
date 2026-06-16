@@ -162,6 +162,62 @@ class MediaMTXManager {
     }
 
     /**
+     * Check if a source URL is reachable by making a lightweight HTTP HEAD/GET.
+     * Only checks HTTP/HTTPS URLs — RTSP/RTMP URLs are assumed reachable.
+     *
+     * @returns {{ reachable: boolean, error: string|null, statusCode: number|null }}
+     */
+    async checkSourceReachable(streamUrl) {
+        try {
+            const parsed = new URL(streamUrl);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                // RTSP, RTMP, etc. — can't easily check, assume reachable
+                return { reachable: true, error: null, statusCode: null };
+            }
+        } catch (e) {
+            return { reachable: false, error: 'Invalid URL', statusCode: null };
+        }
+
+        return new Promise((resolve) => {
+            const url = new URL(streamUrl);
+            const isHttps = url.protocol === 'https:';
+            const requester = isHttps ? https : http;
+
+            const options = {
+                hostname: url.hostname,
+                port: url.port || (isHttps ? 443 : 80),
+                path: url.pathname + url.search,
+                method: 'HEAD',
+                headers: {
+                    'User-Agent': 'ChatrixStream-HealthCheck/1.0'
+                },
+                timeout: 8000
+            };
+
+            const req = requester.request(options, (res) => {
+                res.resume();
+                // 2xx or 3xx = source is reachable
+                if (res.statusCode >= 200 && res.statusCode < 400) {
+                    resolve({ reachable: true, error: null, statusCode: res.statusCode });
+                } else {
+                    resolve({ reachable: false, error: 'Source returned status ' + res.statusCode, statusCode: res.statusCode });
+                }
+            });
+
+            req.on('error', (err) => {
+                resolve({ reachable: false, error: err.code || err.message, statusCode: null });
+            });
+
+            req.on('timeout', () => {
+                req.destroy();
+                resolve({ reachable: false, error: 'Connection timeout', statusCode: null });
+            });
+
+            req.end();
+        });
+    }
+
+    /**
      * Build a source URL suitable for MediaMTX.
      * MediaMTX can pull from: rtsp://, rtmp://, http:// (HLS), rtsps://, etc.
      *

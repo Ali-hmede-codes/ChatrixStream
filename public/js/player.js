@@ -475,7 +475,20 @@
                     // Check if this is a 503 (stream not ready or MediaMTX down) — retryable
                     var is503 = message.indexOf('503') !== -1 || message.indexOf('Service Unavailable') !== -1;
                     var isMediaServerDown = message.indexOf('media_server_not_available') !== -1;
-                    if (is503 || isMediaServerDown) {
+                    var isSourceUnreachable = message.indexOf('source_unreachable') !== -1;
+                    if (isSourceUnreachable) {
+                        // Source stream is down — stop reconnecting, show clear error
+                        console.error('Stream source is unreachable (offline)');
+                        destroyPlayer();
+                        showError('Stream Offline', 'The stream source is currently unreachable. The broadcaster may be offline.');
+                        errorBtn.textContent = 'Retry';
+                        errorBtn.onclick = function() {
+                            reconnectAttempts = 0;
+                            reconnectBackoff = 2000;
+                            errorOverlay.classList.add('hidden');
+                            startStream(currentQuality || getAvailableQualities()[0]?.label);
+                        };
+                    } else if (is503 || isMediaServerDown) {
                         console.warn('Stream server unavailable (503), waiting and retrying...');
                         // Show a more helpful message if MediaMTX is down
                         if (isMediaServerDown || (reconnectAttempts >= 3 && is503)) {

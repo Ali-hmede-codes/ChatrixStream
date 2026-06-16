@@ -341,6 +341,20 @@ module.exports = function(db, mediamtxManager) {
         );
 
         if (!ready) {
+            // Check if the source URL is reachable — give a specific error if not
+            const sourceCheck = await mediamtxManager.checkSourceReachable(validation.quality.stream_url);
+            if (!sourceCheck.reachable) {
+                console.error('HLS: Source URL unreachable for channel', validation.channel.id, 'quality', validation.quality.quality_label, '- URL:', validation.quality.stream_url, '- Error:', sourceCheck.error);
+                res.writeHead(503, {
+                    'Content-Type': 'application/json',
+                    'Retry-After': '10',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Expose-Headers': 'Content-Type, Retry-After, X-Stream-Error',
+                    'X-Stream-Error': 'source_unreachable'
+                });
+                return res.end(JSON.stringify({ error: 'source_unreachable', message: 'Stream source is not reachable: ' + (sourceCheck.error || 'unknown error') }));
+            }
+
             console.warn('HLS: Path not ready after waiting for channel', validation.channel.id, 'quality', validation.quality.quality_label, '- source URL:', validation.quality.stream_url);
             res.writeHead(503, {
                 'Content-Type': 'application/json',
