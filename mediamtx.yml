@@ -6,7 +6,7 @@
 ################################################
 # Global settings -> General
 ################################################
-logLevel: infoo
+logLevel: info
 logDestinations: [stdout]
 readTimeout: 60s
 writeTimeout: 60s
