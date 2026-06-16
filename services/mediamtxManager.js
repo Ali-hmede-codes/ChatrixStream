@@ -119,18 +119,6 @@ class MediaMTXManager {
         const existing = this.activePaths.get(pathName);
         if (existing) {
             existing.lastAccess = Date.now();
-            try {
-                await this._apiRequest('GET', '/v3/config/paths/get/' + pathName);
-            } catch (e) {
-                if (e.statusCode === 404) {
-                    this.activePaths.delete(pathName);
-                } else {
-                    return existing;
-                }
-            }
-            if (!this.activePaths.has(pathName)) {
-                return this._createPath(pathName, channelId, qualityLabel, streamUrl, qualityConfig);
-            }
             return existing;
         }
 
