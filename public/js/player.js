@@ -495,6 +495,23 @@
                 bufferingStartTime = null;
             }
             lastPlayingTime = Date.now();
+
+            // iOS/Safari safe live edge sync on play/resume
+            if (isIOS() || isSafari()) {
+                setTimeout(function() {
+                    var seekable = vjsPlayer.seekable();
+                    if (seekable && seekable.length > 0) {
+                        var seekEnd = seekable.end(seekable.length - 1);
+                        var currentTime = vjsPlayer.currentTime();
+                        var behindLive = seekEnd - currentTime;
+                        // If behind by more than 8 seconds, seek to safe live target (5s behind live)
+                        if (behindLive > 8 && isFinite(seekEnd) && isFinite(currentTime)) {
+                            console.log('Safari play/resume: behind live by ' + behindLive.toFixed(1) + 's, seeking to safe live edge');
+                            vjsPlayer.currentTime(Math.max(0, seekEnd - 5));
+                        }
+                    }
+                }, 300);
+            }
         });
 
         vjsPlayer.on('waiting', function() {

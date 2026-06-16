@@ -203,7 +203,7 @@ module.exports = function(db, hlsConverter) {
 
         const minSegments = parseInt(req.query.minSegments, 10) || 3;
         const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label, minSegments);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0, private');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
         res.json({ ready });
@@ -256,7 +256,7 @@ module.exports = function(db, hlsConverter) {
 
         res.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',
-            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0, private',
             'Pragma': 'no-cache',
             'Expires': '0',
             'Access-Control-Allow-Origin': '*',
