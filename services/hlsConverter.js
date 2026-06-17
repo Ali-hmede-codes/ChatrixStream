@@ -454,6 +454,7 @@ class HlsConverter {
 
         if (useStreamManager) {
             proc.stdin.on('error', (err) => {
+                if (err.code === 'EPIPE') return; // Suppress expected EPIPE on stop/restart
                 console.warn(`HlsConverter: ffmpeg stdin error for ${key}:`, err.message);
             });
             this.streamManager.registerConsumer(state.channelId, state.qualityLabel, state.streamUrl, proc.stdin);
