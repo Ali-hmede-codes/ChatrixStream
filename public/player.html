@@ -15,32 +15,31 @@
 
 <body>
     <div id="player-app">
-        <div id="error-overlay" class="hidden">
-            <div class="error-content">
-                <h2 id="error-title">Session Expired</h2>
-                <p id="error-desc">Your access has expired. Please enter a new invite code.</p>
-                <button id="error-btn" onclick="window.location.href='/'">Get New Code</button>
-            </div>
-        </div>
-
-        <div id="loading-overlay" class="hidden">
-            <div class="spinner"></div>
-            <p id="loading-text">Connecting to stream...</p>
-        </div>
-
-        <div id="tap-to-play-overlay" class="hidden">
-            <div class="tap-to-play-content">
-                <div class="tap-icon">
-                    <svg class="play-svg" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z" />
-                    </svg>
-                </div>
-                <p>Tap to Play</p>
-                <span class="tap-subtext">Start Live Stream</span>
-            </div>
-        </div>
-
         <div id="video-container">
+            <div id="error-overlay" class="hidden">
+                <div class="error-content">
+                    <h2 id="error-title">Session Expired</h2>
+                    <p id="error-desc">Your access has expired. Please enter a new invite code.</p>
+                    <button id="error-btn" onclick="window.location.href='/'">Get New Code</button>
+                </div>
+            </div>
+
+            <div id="loading-overlay" class="hidden">
+                <div class="spinner"></div>
+                <p id="loading-text">Connecting to stream...</p>
+            </div>
+
+            <div id="tap-to-play-overlay" class="hidden">
+                <div class="tap-to-play-content">
+                    <div class="tap-icon">
+                        <svg class="play-svg" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z" />
+                        </svg>
+                    </div>
+                    <p>Tap to Play</p>
+                    <span class="tap-subtext">Start Live Stream</span>
+                </div>
+            </div>
             <video id="video-player" class="video-js vjs-default-skin" autoplay muted playsinline
                 webkit-playsinline></video>
             <div id="player-watermark" class="watermark-top-left">
