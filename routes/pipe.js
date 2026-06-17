@@ -72,7 +72,8 @@ module.exports = function(db, pipeConverter) {
         }
 
         // Connect this client to the pipe stream
-        pipeConverter.addClient(channel.id, quality.quality_label, quality.stream_url, quality, res);
+        const internalStreamUrl = `http://127.0.0.1:${req.socket.localPort}/internal/stream/${channel.id}/${quality.quality_label}`;
+        pipeConverter.addClient(channel.id, quality.quality_label, internalStreamUrl, quality, res);
 
         // Periodically re-validate session for this long-lived connection.
         // If the session expires mid-stream, terminate the connection.

@@ -88,6 +88,20 @@ app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
 app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
 app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
+
+app.get('/internal/stream/:channelId/:quality', (req, res) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
+        return res.status(403).send('Forbidden');
+    }
+    const channelId = req.params.channelId;
+    const qualityLabel = req.params.quality;
+    const quality = db.prepare('SELECT stream_url FROM channel_qualities WHERE channel_id = ? AND quality_label = ?').get(channelId, qualityLabel);
+    if (!quality) return res.status(404).send('Not found');
+    
+    streamManager.addClient(channelId, qualityLabel, quality.stream_url, res);
+});
+
 app.use('/channel', streamRoutes(db, streamManager));
 app.use('/hls', hlsRoutes(db, hlsConverter));
 app.use('/pipe', pipeRoutes(db, pipeConverter));

@@ -158,7 +158,8 @@ module.exports = function(db, hlsConverter) {
         if (targetQuality) {
             const q = qualities.find(x => x.quality_label === targetQuality);
             if (q) {
-                hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
+                const internalStreamUrl = `http://127.0.0.1:${req.socket.localPort}/internal/stream/${channel.id}/${q.quality_label}`;
+                hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, internalStreamUrl, q);
                 return res.json({ warming: true, qualities: [q.quality_label] });
             }
         }
@@ -167,7 +168,8 @@ module.exports = function(db, hlsConverter) {
         if (qualities.length > 0) {
             const sortedQualities = qualities.sort((a, b) => a.sort_order - b.sort_order);
             const q = sortedQualities[0];
-            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, q.stream_url, q);
+            const internalStreamUrl = `http://127.0.0.1:${req.socket.localPort}/internal/stream/${channel.id}/${q.quality_label}`;
+            hlsConverter.ensureConversionWarmup(channel.id, q.quality_label, internalStreamUrl, q);
             return res.json({ warming: true, qualities: [q.quality_label] });
         }
 
@@ -198,7 +200,8 @@ module.exports = function(db, hlsConverter) {
         }
 
         if (hlsConverter.isAvailable()) {
-            hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, quality.stream_url, quality);
+            const internalStreamUrl = `http://127.0.0.1:${req.socket.localPort}/internal/stream/${channel.id}/${quality.quality_label}`;
+            hlsConverter.ensureConversionWarmup(channel.id, quality.quality_label, internalStreamUrl, quality);
         }
 
         const minSegments = parseInt(req.query.minSegments, 10) || 3;
@@ -232,7 +235,8 @@ module.exports = function(db, hlsConverter) {
             return res.end(JSON.stringify({ error: 'ffmpeg_not_available', message: 'Server ffmpeg is not installed or not found. HLS conversion cannot be performed.' }));
         }
 
-        hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, validation.quality.stream_url, validation.quality);
+        const internalStreamUrl = `http://127.0.0.1:${req.socket.localPort}/internal/stream/${validation.channel.id}/${validation.quality.quality_label}`;
+        hlsConverter.ensureConversion(validation.channel.id, validation.quality.quality_label, internalStreamUrl, validation.quality);
 
         const manifest = await hlsConverter.waitForManifest(validation.channel.id, validation.quality.quality_label);
         if (!manifest) {
