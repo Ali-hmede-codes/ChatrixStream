@@ -241,7 +241,8 @@ module.exports = function(db, hlsConverter) {
                 'Retry-After': '3',
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Expose-Headers': 'Content-Type, Retry-After, X-Stream-Error',
-                'X-Stream-Error': 'stream_not_ready'
+                'X-Stream-Error': 'stream_not_ready',
+                'Cache-Control': 'no-store, no-cache, must-revalidate'
             });
             return res.end(JSON.stringify({ error: 'stream_not_ready', message: 'Stream is starting up, please retry' }));
         }
@@ -295,6 +296,7 @@ module.exports = function(db, hlsConverter) {
         }
 
         if (!segmentData) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0');
             return res.status(404).end();
         }
 
