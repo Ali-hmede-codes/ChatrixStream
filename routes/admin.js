@@ -226,6 +226,8 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
 
         const nullIfEmpty = (v) => (v === '' || v === undefined) ? null : v;
 
+        const oldQuality = getQualityById.get(qid, id);
+
         updateQuality.run(
             quality_label || null, stream_url || null, sort_order || null,
             nullIfEmpty(preset_key), nullIfEmpty(video_codec), nullIfEmpty(video_bitrate),
@@ -236,6 +238,14 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
             qid
         );
         const quality = getQualityById.get(qid, id);
+
+        if (oldQuality) {
+            const labelToStop = oldQuality.quality_label;
+            streamManager.stopStream(parseInt(id), labelToStop);
+            if (hlsConverter) hlsConverter.stopConversion(parseInt(id), labelToStop);
+            if (pipeConverter) pipeConverter.stopStream(parseInt(id), labelToStop);
+        }
+
         res.json(quality);
     });
 
