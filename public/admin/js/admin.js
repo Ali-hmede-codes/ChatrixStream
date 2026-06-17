@@ -1242,4 +1242,6 @@
             if (navUsers) navUsers.style.display = 'none';
         }
     }
+
+    init();
 })();
