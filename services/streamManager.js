@@ -47,16 +47,6 @@ class StreamManager {
             if (res.statusCode >= 300 && res.statusCode < 400) {
                 console.log(`Stream redirect: ${res.statusCode} -> ${res.headers.location}`);
                 res.resume();
-                if (res.headers.location) {
-                    try {
-                        state.streamUrl = new URL(res.headers.location, state.streamUrl).toString();
-                        // Reconnect immediately to the new URL without scheduling a delay
-                        this._connectSource(key);
-                        return;
-                    } catch (err) {
-                        console.error('StreamManager: Failed to parse redirect location', err);
-                    }
-                }
                 this._scheduleReconnect(key);
                 return;
             }
