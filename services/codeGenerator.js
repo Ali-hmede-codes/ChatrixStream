@@ -148,6 +148,10 @@ function validateSession(db, sessionToken) {
     if (!channel) return { valid: false, error: 'Channel not found' };
     if (channel.link_expires_at && new Date(channel.link_expires_at) <= now) return { valid: false, error: 'Channel link expired' };
 
+    if (channel.code_required === 1 && !session.invite_code_id) {
+        return { valid: false, error: 'This channel now requires an invite code' };
+    }
+
     return {
         valid: true,
         channel_id: channel.id,
