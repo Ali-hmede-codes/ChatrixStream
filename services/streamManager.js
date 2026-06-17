@@ -104,6 +104,19 @@ class StreamManager {
             qualityLabel
         };
 
+        const maxBuffer = 5 * 1024 * 1024; // 5MB limit
+        passThrough.on('data', (chunk) => {
+            for (const client of state.clients) {
+                if (!client.destroyed && !client.writableEnded) {
+                    client.write(chunk);
+                    if (client.writableLength > maxBuffer) {
+                        console.log(`StreamManager: Client fell too far behind (${client.writableLength} bytes buffered), dropping connection`);
+                        client.destroy();
+                    }
+                }
+            }
+        });
+
         this.activeStreams.set(key, state);
         this._connectSource(key);
 
@@ -149,7 +162,6 @@ class StreamManager {
             'X-Accel-Buffering': 'no'
         });
 
-        state.passThrough.pipe(res, { end: false });
         state.clients.add(res);
 
         res.on('close', () => {
@@ -167,7 +179,6 @@ class StreamManager {
         if (!state) return;
 
         state.clients.delete(res);
-        state.passThrough.unpipe(res);
 
         if (state.clients.size === 0) {
             state.idleTimer = setTimeout(() => {

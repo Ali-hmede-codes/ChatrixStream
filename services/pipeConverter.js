@@ -351,9 +351,14 @@ class PipeConverter {
             }
 
             // Write to every connected client
+            const maxBuffer = 5 * 1024 * 1024; // 5MB limit
             for (const client of state.clients) {
                 if (!client.destroyed && !client.writableEnded) {
                     client.write(chunk);
+                    if (client.writableLength > maxBuffer) {
+                        console.log(`PipeConverter: Client fell too far behind (${client.writableLength} bytes buffered), dropping connection`);
+                        client.destroy();
+                    }
                 }
             }
         });
