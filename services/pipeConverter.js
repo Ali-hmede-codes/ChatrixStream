@@ -1,15 +1,5 @@
 const { spawn } = require('child_process');
 
-function isM3U8(url) {
-    if (!url) return false;
-    try {
-        const parsed = new URL(url);
-        return parsed.pathname.endsWith('.m3u8') || parsed.pathname.includes('.m3u8');
-    } catch (e) {
-        return false;
-    }
-}
-
 const QUALITY_PRESETS = {
     low: {
         videoCodec: 'libx264',
@@ -68,7 +58,6 @@ class PipeConverter {
         this.rollingBufferSize = options.rollingBufferSize || 4 * 1024 * 1024;
         this.ffmpegAvailable = false;
         this.qualityPresets = options.qualityPresets || QUALITY_PRESETS;
-        this.streamManager = options.streamManager;
         this._checkFfmpeg();
     }
 
@@ -255,13 +244,8 @@ class PipeConverter {
         const state = this.activeStreams.get(key);
         if (!state) return;
 
-        const useStreamManager = this.streamManager && !isM3U8(state.streamUrl);
-
         if (state.ffmpegProcess) {
             try {
-                if (useStreamManager) {
-                    this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, state.ffmpegProcess.stdin);
-                }
                 state.ffmpegProcess.stdout.destroy();
                 state.ffmpegProcess.stderr.destroy();
                 state.ffmpegProcess.kill('SIGKILL');
@@ -277,7 +261,19 @@ class PipeConverter {
         state.recentChunksSize = 0;
 
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
+        const parsedUrl = new URL(state.streamUrl);
         const args = [];
+
+        // Auth header for sources behind Basic auth
+        if (parsedUrl.username || parsedUrl.password) {
+            const auth = Buffer.from(parsedUrl.username + ':' + parsedUrl.password).toString('base64');
+            args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
+        }
+
+        const cleanUrl = new URL(state.streamUrl);
+        cleanUrl.username = '';
+        cleanUrl.password = '';
+        const urlStr = cleanUrl.toString();
 
         args.push('-nostdin');
         args.push('-threads', '0');
@@ -286,35 +282,16 @@ class PipeConverter {
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
         args.push('-probesize', '1000000');
-
-        if (useStreamManager) {
-            args.push('-avoid_negative_ts', 'make_zero');
-            args.push('-max_delay', '0');
-            args.push('-i', 'pipe:0');
-        } else {
-            const parsedUrl = new URL(state.streamUrl);
-            // Auth header for sources behind Basic auth
-            if (parsedUrl.username || parsedUrl.password) {
-                const auth = Buffer.from(parsedUrl.username + ':' + parsedUrl.password).toString('base64');
-                args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
-            }
-
-            const cleanUrl = new URL(state.streamUrl);
-            cleanUrl.username = '';
-            cleanUrl.password = '';
-            const urlStr = cleanUrl.toString();
-
-            args.push('-rw_timeout', '15000000');
-            args.push('-reconnect', '1');
-            args.push('-reconnect_at_eof', '1');
-            args.push('-reconnect_streamed', '1');
-            args.push('-reconnect_delay_max', '30');
-            args.push('-reconnect_on_network_error', '1');
-            args.push('-reconnect_on_http_error', '4xx,5xx');
-            args.push('-avoid_negative_ts', 'make_zero');
-            args.push('-max_delay', '0');
-            args.push('-i', urlStr);
-        }
+        args.push('-rw_timeout', '15000000');
+        args.push('-reconnect', '1');
+        args.push('-reconnect_at_eof', '1');
+        args.push('-reconnect_streamed', '1');
+        args.push('-reconnect_delay_max', '30');
+        args.push('-reconnect_on_network_error', '1');
+        args.push('-reconnect_on_http_error', '4xx,5xx');
+        args.push('-avoid_negative_ts', 'make_zero');
+        args.push('-max_delay', '0');
+        args.push('-i', urlStr);
 
         if (preset.copyVideo) {
             args.push('-c:v', 'copy');
@@ -352,18 +329,10 @@ class PipeConverter {
         args.push('-f', 'mpegts');
         args.push('pipe:1');
 
-        console.log('PipeConverter: starting ffmpeg for', key, 'video:', preset.copyVideo ? 'copy' : preset.videoBitrate, 'audio:', preset.audioBitrate, 'useStreamManager:', useStreamManager);
+        console.log('PipeConverter: starting ffmpeg for', key, 'video:', preset.copyVideo ? 'copy' : preset.videoBitrate, 'audio:', preset.audioBitrate);
 
-        const proc = spawn(this.ffmpegPath, args, { stdio: [useStreamManager ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+        const proc = spawn(this.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         state.ffmpegProcess = proc;
-
-        if (useStreamManager) {
-            proc.stdin.on('error', (err) => {
-                if (err.code === 'EPIPE') return; // Suppress expected EPIPE on stop/restart
-                console.warn(`PipeConverter: ffmpeg stdin error for ${key}:`, err.message);
-            });
-            this.streamManager.registerConsumer(state.channelId, state.qualityLabel, state.streamUrl, proc.stdin);
-        }
 
         // Fan out FFmpeg stdout data to all connected clients + rolling buffer
         proc.stdout.on('data', (chunk) => {
@@ -407,18 +376,12 @@ class PipeConverter {
         proc.on('error', (err) => {
             console.error('PipeConverter: ffmpeg spawn error:', err.message);
             state.ffmpegProcess = null;
-            if (useStreamManager) {
-                this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, proc.stdin);
-            }
             this._scheduleRestart(key);
         });
 
         proc.on('close', (code, signal) => {
             console.log('PipeConverter: ffmpeg exited code', code, 'signal', signal, 'for', key);
             state.ffmpegProcess = null;
-            if (useStreamManager) {
-                this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, proc.stdin);
-            }
             if (this.activeStreams.has(key) && !state.restarting) {
                 this._scheduleRestart(key);
             }
@@ -472,10 +435,6 @@ class PipeConverter {
 
         if (state.ffmpegProcess) {
             try {
-                const useStreamManager = this.streamManager && !isM3U8(state.streamUrl);
-                if (useStreamManager) {
-                    this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, state.ffmpegProcess.stdin);
-                }
                 state.ffmpegProcess.stdout.destroy();
                 state.ffmpegProcess.stderr.destroy();
                 state.ffmpegProcess.kill('SIGKILL');

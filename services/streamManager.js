@@ -187,39 +187,6 @@ class StreamManager {
         }
     }
 
-    registerConsumer(channelId, qualityLabel, streamUrl, consumer) {
-        const key = this._getKey(channelId, qualityLabel);
-        let state = this.activeStreams.get(key);
-
-        if (!state) {
-            this.startStream(channelId, qualityLabel, streamUrl);
-            state = this.activeStreams.get(key);
-        }
-
-        if (state.idleTimer) {
-            clearTimeout(state.idleTimer);
-            state.idleTimer = null;
-        }
-
-        state.clients.add(consumer);
-        console.log(`StreamManager: registered consumer for channel ${channelId} (${qualityLabel}). Total clients/consumers: ${state.clients.size}`);
-    }
-
-    unregisterConsumer(channelId, qualityLabel, consumer) {
-        const key = this._getKey(channelId, qualityLabel);
-        const state = this.activeStreams.get(key);
-        if (!state) return;
-
-        state.clients.delete(consumer);
-        console.log(`StreamManager: unregistered consumer for channel ${channelId} (${qualityLabel}). Remaining clients/consumers: ${state.clients.size}`);
-
-        if (state.clients.size === 0) {
-            state.idleTimer = setTimeout(() => {
-                this.stopStream(channelId, qualityLabel);
-            }, this.idleTimeout);
-        }
-    }
-
     stopStream(channelId, qualityLabel) {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeStreams.get(key);

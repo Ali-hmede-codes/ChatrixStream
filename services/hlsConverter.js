@@ -2,16 +2,6 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-function isM3U8(url) {
-    if (!url) return false;
-    try {
-        const parsed = new URL(url);
-        return parsed.pathname.endsWith('.m3u8') || parsed.pathname.includes('.m3u8');
-    } catch (e) {
-        return false;
-    }
-}
-
 // Simple LRU cache for segment data (in-memory)
 class SegmentLRU {
     constructor(maxSize) {
@@ -107,7 +97,6 @@ class HlsConverter {
         this.ffmpegPath = options.ffmpegPath || 'ffmpeg';
         this.ffmpegAvailable = false;
         this.qualityPresets = options.qualityPresets || QUALITY_PRESETS;
-        this.streamManager = options.streamManager;
 
         this._cleanTempDir();
         if (!fs.existsSync(this.tempDir)) {
@@ -308,13 +297,8 @@ class HlsConverter {
         const state = this.activeConversions.get(key);
         if (!state) return;
 
-        const useStreamManager = this.streamManager && !isM3U8(state.streamUrl);
-
         if (state.ffmpegProcess) {
             try {
-                if (useStreamManager) {
-                    this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, state.ffmpegProcess.stdin);
-                }
                 state.ffmpegProcess.stdout.destroy();
                 state.ffmpegProcess.stderr.destroy();
                 state.ffmpegProcess.kill('SIGKILL');
@@ -359,7 +343,18 @@ class HlsConverter {
         state.startNumber = startNumber;
 
         const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
+        const parsedUrl = new URL(state.streamUrl);
         const args = [];
+
+        if (parsedUrl.username || parsedUrl.password) {
+            const auth = Buffer.from(parsedUrl.username + ':' + parsedUrl.password).toString('base64');
+            args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
+        }
+
+        const cleanUrl = new URL(state.streamUrl);
+        cleanUrl.username = '';
+        cleanUrl.password = '';
+        const urlWithoutCreds = cleanUrl.toString();
 
         args.push('-nostdin');
         args.push('-threads', '0');
@@ -368,34 +363,16 @@ class HlsConverter {
         args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
         args.push('-probesize', '1000000');
-
-        if (useStreamManager) {
-            args.push('-avoid_negative_ts', 'make_zero');
-            args.push('-max_delay', '0');
-            args.push('-i', 'pipe:0');
-        } else {
-            const parsedUrl = new URL(state.streamUrl);
-            if (parsedUrl.username || parsedUrl.password) {
-                const auth = Buffer.from(parsedUrl.username + ':' + parsedUrl.password).toString('base64');
-                args.push('-headers', 'Authorization: Basic ' + auth + '\r\n');
-            }
-
-            const cleanUrl = new URL(state.streamUrl);
-            cleanUrl.username = '';
-            cleanUrl.password = '';
-            const urlWithoutCreds = cleanUrl.toString();
-
-            args.push('-rw_timeout', '15000000');
-            args.push('-reconnect', '1');
-            args.push('-reconnect_at_eof', '1');
-            args.push('-reconnect_streamed', '1');
-            args.push('-reconnect_delay_max', '10');
-            args.push('-reconnect_on_network_error', '1');
-            args.push('-reconnect_on_http_error', '4xx,5xx');
-            args.push('-avoid_negative_ts', 'make_zero');
-            args.push('-max_delay', '0');
-            args.push('-i', urlWithoutCreds);
-        }
+        args.push('-rw_timeout', '15000000');
+        args.push('-reconnect', '1');
+        args.push('-reconnect_at_eof', '1');
+        args.push('-reconnect_streamed', '1');
+        args.push('-reconnect_delay_max', '10');
+        args.push('-reconnect_on_network_error', '1');
+        args.push('-reconnect_on_http_error', '4xx,5xx');
+        args.push('-avoid_negative_ts', 'make_zero');
+        args.push('-max_delay', '0');
+        args.push('-i', urlWithoutCreds);
 
         if (preset.copyVideo) {
             args.push('-c:v', 'copy');
@@ -446,19 +423,11 @@ class HlsConverter {
         args.push('-hls_segment_filename', segmentPattern);
         args.push(manifestPath);
 
-        console.log('HlsConverter: starting ffmpeg for', key, 'preset:', state.qualityLabel.toLowerCase().trim() || 'high', 'video:', preset.copyVideo ? 'copy' : preset.videoBitrate, 'audio:', preset.audioBitrate, 'useStreamManager:', useStreamManager);
+        console.log('HlsConverter: starting ffmpeg for', key, 'preset:', state.qualityLabel.toLowerCase().trim() || 'high', 'video:', preset.copyVideo ? 'copy' : preset.videoBitrate, 'audio:', preset.audioBitrate);
 
-        const proc = spawn(this.ffmpegPath, args, { stdio: [useStreamManager ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+        const proc = spawn(this.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         state.ffmpegProcess = proc;
         state.manifestReady = false;
-
-        if (useStreamManager) {
-            proc.stdin.on('error', (err) => {
-                if (err.code === 'EPIPE') return; // Suppress expected EPIPE on stop/restart
-                console.warn(`HlsConverter: ffmpeg stdin error for ${key}:`, err.message);
-            });
-            this.streamManager.registerConsumer(state.channelId, state.qualityLabel, state.streamUrl, proc.stdin);
-        }
 
         proc.stderr.on('data', (data) => {
             const msg = data.toString().trim();
@@ -474,18 +443,12 @@ class HlsConverter {
         proc.on('error', (err) => {
             console.error('HlsConverter: ffmpeg spawn error:', err.message);
             state.ffmpegProcess = null;
-            if (useStreamManager) {
-                this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, proc.stdin);
-            }
             this._scheduleRestart(key);
         });
 
         proc.on('close', (code, signal) => {
             console.log('HlsConverter: ffmpeg exited with code', code, 'signal', signal, 'for', key);
             state.ffmpegProcess = null;
-            if (useStreamManager) {
-                this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, proc.stdin);
-            }
             if (this.activeConversions.has(key) && !state.restarting) {
                 this._scheduleRestart(key);
             }
@@ -744,10 +707,6 @@ class HlsConverter {
         if (state.restartTimer) clearTimeout(state.restartTimer);
         if (state.ffmpegProcess) {
             try {
-                const useStreamManager = this.streamManager && !isM3U8(state.streamUrl);
-                if (useStreamManager) {
-                    this.streamManager.unregisterConsumer(state.channelId, state.qualityLabel, state.ffmpegProcess.stdin);
-                }
                 state.ffmpegProcess.stdout.destroy();
                 state.ffmpegProcess.stderr.destroy();
                 state.ffmpegProcess.kill('SIGKILL');
