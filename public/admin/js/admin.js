@@ -7,6 +7,7 @@
     let adminUsers = [];
     let currentView = 'channels';
     var editingUserId = null;
+    var activeCodeTabs = {};
 
     const adminLogin = document.getElementById('admin-login');
     const dashboard = document.getElementById('dashboard');
@@ -590,7 +591,7 @@
         return 'stream copy (no transcode)';
     }
 
-    async function loadCodes(channelId) {
+    async function loadCodes(channelId, isSilent = false) {
         var codes = await adminFetch('/channels/' + channelId + '/codes');
         var list = document.getElementById('codes-list-' + channelId);
         if (!list) return;
@@ -600,31 +601,50 @@
             return;
         }
 
-        list.innerHTML =
+        var activeTab = activeCodeTabs[channelId] || 'unread';
+
+        var unreadCodes = codes.filter(function(c) { return c.status === 'unused'; });
+        var redeemedCodes = codes.filter(function(c) { return c.status !== 'unused'; });
+
+        var codesToShow = activeTab === 'unread' ? unreadCodes : redeemedCodes;
+
+        var html = 
+            '<div class="codes-tabs">' +
+                '<button class="codes-tab ' + (activeTab === 'unread' ? 'active' : '') + '" data-action="switch-codes-tab" data-tab="unread" data-channel-id="' + channelId + '">Unread (' + unreadCodes.length + ')</button>' +
+                '<button class="codes-tab ' + (activeTab === 'redeemed' ? 'active' : '') + '" data-action="switch-codes-tab" data-tab="redeemed" data-channel-id="' + channelId + '">Redeemed/Expired (' + redeemedCodes.length + ')</button>' +
+            '</div>' +
             '<div class="codes-header">' +
-                '<span class="codes-count">' + codes.length + ' code' + (codes.length !== 1 ? 's' : '') + '</span>' +
-                '<button class="btn-copy-all" data-action="copy-all-codes" data-channel-id="' + channelId + '">Copy All Codes</button>' +
+                '<span class="codes-count">' + codesToShow.length + ' code' + (codesToShow.length !== 1 ? 's' : '') + ' in this tab</span>' +
+                '<button class="btn-copy-all" data-action="copy-all-codes" data-channel-id="' + channelId + '" data-tab="' + activeTab + '">Copy ' + (activeTab === 'unread' ? 'Unread' : 'These') + ' Codes</button>' +
             '</div>';
 
-        var codesScroll = document.createElement('div');
-        codesScroll.className = 'codes-scroll';
+        var scrollHtml = '<div class="codes-scroll">';
+        if (codesToShow.length === 0) {
+            scrollHtml += '<p style="color: var(--text-secondary); font-size: 0.85rem; padding: 8px 0;">No codes in this category</p>';
+        } else {
+            codesToShow.forEach(function(c) {
+                var statusClass = c.status;
+                scrollHtml +=
+                    '<div class="code-item">' +
+                        '<span class="code_text">' + c.code + '</span>' +
+                        '<span class="status ' + statusClass + '">' + c.status + '</span>' +
+                        '<span class="expiry-info">Expires: ' + formatDate(c.expires_at) + '</span>' +
+                        '<div class="code-item-actions">' +
+                            '<button class="btn-copy-code" data-action="copy-code" data-code="' + c.code + '" title="Copy code">&#128203;</button>' +
+                            '<button class="delete-btn" data-action="revoke-code" data-code="' + c.code + '">Revoke</button>' +
+                        '</div>' +
+                    '</div>';
+            });
+        }
+        scrollHtml += '</div>';
 
-        codes.forEach(function(c) {
-            var statusClass = c.status;
-            var item = document.createElement('div');
-            item.className = 'code-item';
-            item.innerHTML =
-                '<span class="code_text">' + c.code + '</span>' +
-                '<span class="status ' + statusClass + '">' + c.status + '</span>' +
-                '<span class="expiry-info">Expires: ' + formatDate(c.expires_at) + '</span>' +
-                '<div class="code-item-actions">' +
-                    '<button class="btn-copy-code" data-action="copy-code" data-code="' + c.code + '" title="Copy code">&#128203;</button>' +
-                    '<button class="delete-btn" data-action="revoke-code" data-code="' + c.code + '">Revoke</button>' +
-                '</div>';
-            codesScroll.appendChild(item);
-        });
+        var oldScroll = list.querySelector('.codes-scroll');
+        var scrollTop = oldScroll ? oldScroll.scrollTop : 0;
 
-        list.appendChild(codesScroll);
+        list.innerHTML = html + scrollHtml;
+
+        var newScroll = list.querySelector('.codes-scroll');
+        if (newScroll) newScroll.scrollTop = scrollTop;
     }
 
     function formatDate(dateStr) {
@@ -749,14 +769,25 @@
             return;
         }
 
+        if (action === 'switch-codes-tab') {
+            activeCodeTabs[btn.dataset.channelId] = btn.dataset.tab;
+            loadCodes(btn.dataset.channelId, true);
+            return;
+        }
+
         if (action === 'copy-all-codes') {
             var channelId = btn.dataset.channelId;
+            var tab = btn.dataset.tab;
             var codesList = document.getElementById('codes-list-' + channelId);
             var codeEls = codesList.querySelectorAll('.code_text');
             var allCodes = [];
             codeEls.forEach(function(el) { allCodes.push(el.textContent); });
+            if (allCodes.length === 0) {
+                showToast('No codes to copy', 'error');
+                return;
+            }
             navigator.clipboard.writeText(allCodes.join('\n'));
-            showToast(allCodes.length + ' codes copied to clipboard', 'success');
+            showToast(allCodes.length + (tab === 'unread' ? ' unread' : '') + ' codes copied to clipboard', 'success');
             return;
         }
 
@@ -1242,6 +1273,15 @@
             if (navUsers) navUsers.style.display = 'none';
         }
     }
+
+    setInterval(function() {
+        if (currentView !== 'channels') return;
+        var openBodies = document.querySelectorAll('.channel-body:not(.collapsed)');
+        openBodies.forEach(function(body) {
+            var id = body.id.replace('channel-body-', '');
+            if (id) loadCodes(id, true);
+        });
+    }, 5000);
 
     init();
 })();

@@ -1523,3 +1523,30 @@
 .add-quality-form {
     flex-wrap: wrap;
 }
+
+/* Codes Tabs */
+.codes-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.codes-tab {
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all var(--transition);
+}
+.codes-tab:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+}
+.codes-tab.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
