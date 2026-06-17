@@ -36,13 +36,15 @@ const hlsConverter = new HlsConverter({
     maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 10,
     manifestWaitTimeout: parseInt(process.env.HLS_MANIFEST_WAIT_TIMEOUT_MS) || 15000,
     startupTimeout: parseInt(process.env.HLS_STARTUP_TIMEOUT_MS) || 60000,
-    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
+    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg',
+    streamManager
 });
 const pipeConverter = new PipeConverter({
     idleTimeout: parseInt(process.env.HLS_IDLE_TIMEOUT_MS) || 30000,
     restartDelay: parseInt(process.env.HLS_RESTART_DELAY_MS) || 2000,
     maxRetries: parseInt(process.env.HLS_MAX_RETRIES) || 15,
-    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg'
+    ffmpegPath: process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg',
+    streamManager
 });
 
 const app = express();
