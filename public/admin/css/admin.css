@@ -1599,3 +1599,43 @@
 [dir="rtl"] .stream-quality-row {
     flex-direction: row-reverse;
 }
+
+/* Language Switch Button */
+.lang-switch-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all var(--transition);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.lang-switch-btn:hover {
+    background: rgba(108, 92, 231, 0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+}
+
+.lang-icon {
+    font-size: 1.1rem;
+}
+
+/* Arabic Font Enforcement */
+[dir="rtl"], [dir="rtl"] body, [dir="rtl"] button, [dir="rtl"] input, [dir="rtl"] select, [dir="rtl"] .nav-item {
+    font-family: 'Cairo', 'Outfit', sans-serif !important;
+}
+
+[dir="rtl"] .lang-switch-btn {
+    flex-direction: row-reverse;
+}

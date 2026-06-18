@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title data-i18n="title">ChatrixStream — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="./css/admin.css">
 </head>
@@ -59,8 +62,9 @@
                     </a>
                 </nav>
                 <div class="sidebar-footer">
-                    <button id="lang-switch-btn" class="btn-ghost" style="margin-bottom: 10px; width: 100%; border: 1px solid var(--border-color); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">🌐</span> <span data-i18n="switch_language">عربي</span>
+                    <button id="lang-switch-btn" class="lang-switch-btn" aria-label="Switch Language">
+                        <span class="lang-icon">🌐</span>
+                        <span class="lang-text" data-i18n="switch_language">عربي</span>
                     </button>
                     <div class="admin-info">
                         <div class="admin-avatar" id="admin-avatar"></div>
