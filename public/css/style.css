@@ -517,6 +517,11 @@ body {
 
 #video-container:fullscreen #quality-bar,
 #video-container:-webkit-full-screen #quality-bar,
+#video-container:fullscreen #expiry-notice,
+#video-container:-webkit-full-screen #expiry-notice {
+    display: none !important;
+}
+
 #video-container:fullscreen #tap-to-play-overlay,
 #video-container:-webkit-full-screen #tap-to-play-overlay,
 #video-container:fullscreen #error-overlay,
