@@ -144,6 +144,19 @@
     codeInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') redeemCode();
     });
+    codeInput.addEventListener('input', function(e) {
+        let val = e.target.value.toUpperCase();
+        if (val === 'C' || val === 'CS' || val === 'CS-') {
+            e.target.value = val;
+            return;
+        }
+        if (val.length > 0 && !val.startsWith('CS-')) {
+            let stripped = val.replace(/^(C(S(-?)?)?)?/, '');
+            e.target.value = 'CS-' + stripped;
+        } else {
+            e.target.value = val;
+        }
+    });
 
     init();
 })();
