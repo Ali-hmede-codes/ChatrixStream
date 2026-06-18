@@ -191,6 +191,10 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
         const { id } = req.params;
         const newToken = generateChannelToken();
         updateChannelToken.run(newToken, id);
+        
+        // Reset the views count when regenerating the link
+        db.prepare('DELETE FROM channel_viewers WHERE channel_id = ?').run(id);
+        
         res.json({ channel_token: newToken });
     });
 
