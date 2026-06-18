@@ -15,6 +15,15 @@
         channelTokenFromUrl = pathParts[2];
     }
 
+    function getViewerId() {
+        let viewerId = localStorage.getItem('chatrix_viewer_id');
+        if (!viewerId) {
+            viewerId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'vid-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+            localStorage.setItem('chatrix_viewer_id', viewerId);
+        }
+        return viewerId;
+    }
+
     async function init() {
         const session = localStorage.getItem(SESSION_KEY);
         if (session) {
@@ -24,7 +33,7 @@
                 const res = await fetch('/api/auth/session', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_token: data.session_token })
+                    body: JSON.stringify({ session_token: data.session_token, viewer_id: getViewerId() })
                 });
                 const result = await res.json();
                 if (result.valid) {
@@ -44,7 +53,8 @@
             try {
                 const res = await fetch('/api/auth/direct/' + channelTokenFromUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ viewer_id: getViewerId() })
                 });
                 const result = await res.json();
 
@@ -105,7 +115,7 @@
             const res = await fetch('/api/auth/redeem', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: code })
+                body: JSON.stringify({ code: code, viewer_id: getViewerId() })
             });
             const result = await res.json();
 

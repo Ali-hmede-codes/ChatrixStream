@@ -59,7 +59,7 @@ module.exports = function(db) {
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
 
     router.post('/redeem', (req, res) => {
-        const { code } = req.body;
+        const { code, viewer_id } = req.body;
         if (!code) return res.status(400).json({ error: 'Code is required' });
 
         const result = redeemInviteCode(db, code);
@@ -87,6 +87,15 @@ module.exports = function(db) {
             ...q,
             bitrate_info: deriveBitrateInfo(q)
         }));
+
+        if (viewer_id && typeof viewer_id === 'string') {
+            try {
+                db.prepare('INSERT OR IGNORE INTO channel_viewers (channel_id, viewer_id) VALUES (?, ?)').run(result.channel_id, viewer_id);
+            } catch (e) {
+                console.error('Error tracking viewer:', e.message);
+            }
+        }
+
         res.json({
             session_token: result.session_token,
             channel_token: result.channel_token,
@@ -99,6 +108,7 @@ module.exports = function(db) {
     // Direct access endpoint: for channels with code_required = 0 (no invite code needed)
     router.post('/direct/:channelToken', (req, res) => {
         const { channelToken } = req.params;
+        const { viewer_id } = req.body || {};
         const channel = getChannelByToken.get(channelToken);
 
         if (!channel) {
@@ -134,6 +144,15 @@ module.exports = function(db) {
             ...q,
             bitrate_info: deriveBitrateInfo(q)
         }));
+
+        if (viewer_id && typeof viewer_id === 'string') {
+            try {
+                db.prepare('INSERT OR IGNORE INTO channel_viewers (channel_id, viewer_id) VALUES (?, ?)').run(result.channel_id, viewer_id);
+            } catch (e) {
+                console.error('Error tracking viewer:', e.message);
+            }
+        }
+
         res.json({
             session_token: result.session_token,
             channel_token: result.channel_token,
@@ -151,12 +170,17 @@ module.exports = function(db) {
     });
 
     router.post('/session', (req, res) => {
-        const { session_token } = req.body;
+        const { session_token, viewer_id } = req.body;
         if (!session_token) return res.json({ valid: false, error: 'No session token provided' });
 
         const now = Date.now();
         const cached = sessionCache.get(session_token);
         if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
+            if (viewer_id && typeof viewer_id === 'string' && cached.response.valid && cached.channel_id) {
+                try {
+                    db.prepare('INSERT OR IGNORE INTO channel_viewers (channel_id, viewer_id) VALUES (?, ?)').run(cached.channel_id, viewer_id);
+                } catch (e) {}
+            }
             return res.json(cached.response);
         }
 
@@ -182,7 +206,13 @@ module.exports = function(db) {
             expires_at: result.expires_at
         };
 
-        sessionCache.set(session_token, { response: successRes, timestamp: now });
+        if (viewer_id && typeof viewer_id === 'string') {
+            try {
+                db.prepare('INSERT OR IGNORE INTO channel_viewers (channel_id, viewer_id) VALUES (?, ?)').run(result.channel_id, viewer_id);
+            } catch (e) {}
+        }
+
+        sessionCache.set(session_token, { response: successRes, channel_id: result.channel_id, timestamp: now });
 
         // Clean up cache occasionally
         if (sessionCache.size > 1000) {

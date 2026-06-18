@@ -40,6 +40,15 @@
     var usePipeMode = false;
     var mpegtsPlayerInstance = null;
 
+    function getViewerId() {
+        let viewerId = localStorage.getItem('chatrix_viewer_id');
+        if (!viewerId) {
+            viewerId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'vid-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+            localStorage.setItem('chatrix_viewer_id', viewerId);
+        }
+        return viewerId;
+    }
+
     function trackBandwidth() {
         if (bandwidthUpdateInterval) clearInterval(bandwidthUpdateInterval);
         bandwidthUpdateInterval = setInterval(function() {
@@ -271,7 +280,7 @@
             const res = await fetch('/api/auth/session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_token: sessionData.session_token })
+                body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
             });
             const result = await res.json();
 
@@ -1147,7 +1156,7 @@
             fetch('/api/auth/session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_token: sessionData.session_token })
+                body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
             }).then(function(res) { return res.json(); }).then(function(result) {
                 if (!result.valid) {
                     handleSessionExpired(result.error || 'Session expired');
@@ -1162,7 +1171,7 @@
         return fetch('/api/auth/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_token: sessionData.session_token })
+            body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
         }).then(function(res) { return res.json(); }).then(function(result) {
             return !result.valid;
         }).catch(function() {

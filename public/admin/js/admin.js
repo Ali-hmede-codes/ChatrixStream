@@ -191,8 +191,10 @@
     function renderStats() {
         var totalChannels = channels.length;
         var totalCodes = 0;
+        var totalWatchers = 0;
         channels.forEach(function(ch) {
             totalCodes += ch.codes_count || 0;
+            totalWatchers += ch.viewers_count || 0;
         });
 
         statsBar.innerHTML =
@@ -207,6 +209,10 @@
             '<div class="stat-card">' +
                 '<div class="stat-value">' + channels.reduce(function(sum, ch) { return sum + (ch.qualities ? ch.qualities.length : 0); }, 0) + '</div>' +
                 '<div class="stat-label">Stream Qualities</div>' +
+            '</div>' +
+            '<div class="stat-card">' +
+                '<div class="stat-value" style="color: #4CAF50;">' + totalWatchers + '</div>' +
+                '<div class="stat-label">Total Watchers</div>' +
             '</div>';
     }
 
@@ -418,6 +424,7 @@
                     '<h4>' + channel.name + '</h4>' +
                     '<span class="channel-id">ID: ' + channel.id + '</span>' +
                     '<span class="meta-tag code-req-tag ' + codeReqClass + '">' + codeReqStatus + '</span>' +
+                    '<span class="meta-tag" style="background: rgba(76, 175, 80, 0.15); color: #4CAF50;">👁 ' + (channel.viewers_count || 0) + ' Watchers</span>' +
                 '</div>' +
                 '<div class="channel-header-right">' +
                     expiryTag +

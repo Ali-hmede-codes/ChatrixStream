@@ -27,6 +27,7 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
     const getAllChannels = db.prepare('SELECT * FROM channels');
     const getQualitiesByChannel = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
     const getCodesCountByChannel = db.prepare('SELECT COUNT(*) as count FROM invite_codes WHERE channel_id = ?');
+    const getViewersCountByChannel = db.prepare('SELECT COUNT(*) as count FROM channel_viewers WHERE channel_id = ?');
     const deleteChannelById = db.prepare('DELETE FROM channels WHERE id = ?');
     const updateChannel = db.prepare(
         'UPDATE channels SET name = COALESCE(?, name), code_required = COALESCE(?, code_required), code_ttl_hours = COALESCE(?, code_ttl_hours), link_expires_at = ? WHERE id = ?'
@@ -78,7 +79,8 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
         const enriched = channels.map(ch => {
             const qualities = getQualitiesByChannel.all(ch.id);
             const codesCount = getCodesCountByChannel.get(ch.id);
-            return { ...ch, qualities, codes_count: codesCount.count };
+            const viewersCount = getViewersCountByChannel.get(ch.id);
+            return { ...ch, qualities, codes_count: codesCount.count, viewers_count: viewersCount.count };
         });
         res.json(enriched);
     });

@@ -69,6 +69,14 @@ module.exports = function initDB(dbPath) {
             role        TEXT NOT NULL DEFAULT 'admin',
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS channel_viewers (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+            viewer_id   TEXT NOT NULL,
+            first_seen  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(channel_id, viewer_id)
+        );
     `);
 
     // Migration: add code_required column if missing (for existing databases)
@@ -81,6 +89,21 @@ module.exports = function initDB(dbPath) {
         }
     } catch (e) {
         console.error('Migration error (code_required):', e.message);
+    }
+
+    // Migration: create channel_viewers table for existing databases if it somehow missed the schema block
+    try {
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS channel_viewers (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+                viewer_id   TEXT NOT NULL,
+                first_seen  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(channel_id, viewer_id)
+            );
+        `);
+    } catch (e) {
+        console.error('Migration error (channel_viewers):', e.message);
     }
 
     // Migration: make invite_code_id nullable in sessions (for codeless channel access)
@@ -152,6 +175,7 @@ module.exports = function initDB(dbPath) {
         CREATE INDEX IF NOT EXISTS idx_sessions_channel ON sessions(channel_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users(username);
+        CREATE INDEX IF NOT EXISTS idx_channel_viewers_channel ON channel_viewers(channel_id);
     `);
 
     return db;
