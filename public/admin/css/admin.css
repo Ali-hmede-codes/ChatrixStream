@@ -1550,3 +1550,52 @@
     color: white;
     border-color: var(--accent);
 }
+
+/* RTL Support */
+[dir="rtl"] .sidebar {
+    left: auto;
+    right: 0;
+    border-right: none;
+    border-left: 1px solid var(--border);
+}
+
+[dir="rtl"] .main-content {
+    margin-left: 0;
+    margin-right: var(--sidebar-width);
+}
+
+[dir="rtl"] .channel-header-left {
+    text-align: right;
+}
+
+[dir="rtl"] .channel-header-right {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .stats-bar {
+    direction: rtl;
+}
+
+[dir="rtl"] .nav-item {
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+}
+
+[dir="rtl"] .sidebar-header {
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+}
+
+[dir="rtl"] .top-bar-actions {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .channel-header {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .quality-display,
+[dir="rtl"] .quality-actions,
+[dir="rtl"] .stream-quality-row {
+    flex-direction: row-reverse;
+}

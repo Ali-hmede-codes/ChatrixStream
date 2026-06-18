@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatrixStream — Admin</title>
+    <title data-i18n="title">ChatrixStream — Admin</title>
     <link rel="stylesheet" href="../css/style.css">
     <link rel="stylesheet" href="./css/admin.css">
 </head>
@@ -13,21 +13,21 @@
             <div class="login-wrapper">
                 <div class="login-card">
                     <div class="login-logo">
-                        <div class="logo-icon">CS</div>
-                        <h1>ChatrixStream</h1>
-                        <p class="subtitle">Admin Dashboard</p>
+                        <div class="logo-icon" data-i18n="logo_cs">CS</div>
+                        <h1 data-i18n="app_name">ChatrixStream</h1>
+                        <p class="subtitle" data-i18n="admin_dashboard">Admin Dashboard</p>
                     </div>
                     <div class="login-form">
                         <div class="input-field">
-                            <label for="username-input">Username</label>
-                            <input type="text" id="username-input" placeholder="Enter username" autocomplete="off" autofocus>
+                            <label for="username-input" data-i18n="username">Username</label>
+                            <input type="text" id="username-input" placeholder="Enter username" data-i18n-placeholder="username_placeholder" autocomplete="off" autofocus>
                         </div>
                         <div class="input-field">
-                            <label for="password-input">Password</label>
-                            <input type="password" id="password-input" placeholder="Enter password" autocomplete="off">
+                            <label for="password-input" data-i18n="password">Password</label>
+                            <input type="password" id="password-input" placeholder="Enter password" data-i18n-placeholder="password_placeholder" autocomplete="off">
                         </div>
                         <button id="login-btn" class="btn-primary btn-full">
-                            <span class="btn-text">Sign In</span>
+                            <span class="btn-text" data-i18n="sign_in">Sign In</span>
                             <span class="btn-spinner hidden"></span>
                         </button>
                         <p id="login-error" class="error hidden"></p>
@@ -41,45 +41,48 @@
         <div id="dashboard" class="hidden">
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <div class="logo-icon small">CS</div>
-                    <span class="sidebar-title">ChatrixStream</span>
+                    <div class="logo-icon small" data-i18n="logo_cs">CS</div>
+                    <span class="sidebar-title" data-i18n="app_name">ChatrixStream</span>
                 </div>
                 <nav class="sidebar-nav">
                     <a class="nav-item active" data-section="channels">
                         <span class="nav-icon">&#9656;</span>
-                        Channels
+                        <span data-i18n="nav_channels">Channels</span>
                     </a>
                     <a class="nav-item" data-section="streams">
                         <span class="nav-icon">&#9733;</span>
-                        Streams & Qualities
+                        <span data-i18n="nav_streams">Streams & Qualities</span>
                     </a>
                     <a class="nav-item" data-section="users" id="nav-users">
                         <span class="nav-icon">&#9824;</span>
-                        Users
+                        <span data-i18n="nav_users">Users</span>
                     </a>
                 </nav>
                 <div class="sidebar-footer">
+                    <button id="lang-switch-btn" class="btn-ghost" style="margin-bottom: 10px; width: 100%; border: 1px solid var(--border-color); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <span style="font-size: 1.2rem;">🌐</span> <span data-i18n="switch_language">عربي</span>
+                    </button>
                     <div class="admin-info">
                         <div class="admin-avatar" id="admin-avatar"></div>
                         <div class="admin-details">
                             <span class="admin-name" id="admin-name"></span>
-                            <span class="admin-role" id="admin-role"></span>
+                            <span class="admin-role" id="admin-role" data-i18n="role_admin"></span>
                         </div>
                     </div>
-                    <button id="logout-btn" class="btn-ghost">Sign Out</button>
+                    <button id="logout-btn" class="btn-ghost" data-i18n="sign_out">Sign Out</button>
                 </div>
             </aside>
 
             <main class="main-content">
                 <div class="top-bar">
                     <button id="menu-toggle" class="menu-toggle" aria-label="Menu">&#9776;</button>
-                    <h2 class="page-title">Channels</h2>
+                    <h2 class="page-title" data-i18n="nav_channels">Channels</h2>
                     <div class="top-bar-actions">
                         <button id="create-channel-btn" class="btn-primary">
-                            <span class="btn-icon">+</span> New Channel
+                            <span class="btn-icon">+</span> <span data-i18n="new_channel">New Channel</span>
                         </button>
                         <button id="add-user-btn" class="btn-primary hidden">
-                            <span class="btn-icon">+</span> Add User
+                            <span class="btn-icon">+</span> <span data-i18n="add_user">Add User</span>
                         </button>
                     </div>
                 </div>
@@ -88,36 +91,36 @@
                     <div class="modal-overlay" data-close-modal="create-channel">
                         <div class="modal-card">
                             <div class="modal-header">
-                                <h3>Create New Channel</h3>
+                                <h3 data-i18n="create_channel_title">Create New Channel</h3>
                                 <button class="modal-close" data-close-modal="create-channel">&times;</button>
                             </div>
                             <div class="modal-body">
                                 <div class="input-field">
-                                    <label for="new-channel-name">Channel Name</label>
-                                    <input type="text" id="new-channel-name" placeholder="e.g. Sports Live">
+                                    <label for="new-channel-name" data-i18n="channel_name">Channel Name</label>
+                                    <input type="text" id="new-channel-name" placeholder="e.g. Sports Live" data-i18n-placeholder="channel_name_placeholder">
                                 </div>
                                 <div class="input-field">
-                                    <label for="new-channel-stream-url">Main Stream URL <span class="field-hint">(primary/source stream)</span></label>
-                                    <input type="text" id="new-channel-stream-url" placeholder="e.g. https://stream.example.com/live/channel.m3u8">
+                                    <label for="new-channel-stream-url"><span data-i18n="main_stream_url">Main Stream URL</span> <span class="field-hint" data-i18n="primary_stream_hint">(primary/source stream)</span></label>
+                                    <input type="text" id="new-channel-stream-url" placeholder="e.g. https://stream.example.com/live/channel.m3u8" data-i18n-placeholder="stream_url_placeholder">
                                 </div>
                                 <div class="input-field">
-                                    <label for="new-channel-expiry">Link Expiry <span class="field-hint">(required for codes to work)</span></label>
+                                    <label for="new-channel-expiry"><span data-i18n="link_expiry">Link Expiry</span> <span class="field-hint" data-i18n="link_expiry_hint">(required for codes to work)</span></label>
                                     <input type="datetime-local" id="new-channel-expiry">
                                     <span class="field-hint" id="create-expiry-tz-label"></span>
                                 </div>
                                 <div class="input-field toggle-field">
-                                    <label for="new-channel-code-required">Require Invite Code</label>
+                                    <label for="new-channel-code-required" data-i18n="require_invite_code">Require Invite Code</label>
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="new-channel-code-required" checked>
                                         <span class="toggle-slider"></span>
                                     </label>
-                                    <span class="toggle-label" id="new-channel-code-label">Code required to watch</span>
+                                    <span class="toggle-label" id="new-channel-code-label" data-i18n="code_required_watch">Code required to watch</span>
                                 </div>
-                                <p class="form-note">Invite codes will expire when the channel link expires. Set an expiry date to enable code generation. Turn off "Require Invite Code" to allow free access without a code.</p>
+                                <p class="form-note" data-i18n="create_channel_note">Invite codes will expire when the channel link expires. Set an expiry date to enable code generation. Turn off "Require Invite Code" to allow free access without a code.</p>
                             </div>
                             <div class="modal-footer">
-                                <button class="btn-ghost" data-close-modal="create-channel">Cancel</button>
-                                <button class="btn-primary" id="confirm-create-btn">Create Channel</button>
+                                <button class="btn-ghost" data-close-modal="create-channel" data-i18n="cancel">Cancel</button>
+                                <button class="btn-primary" id="confirm-create-btn" data-i18n="create_channel_btn">Create Channel</button>
                             </div>
                         </div>
                     </div>
@@ -127,21 +130,21 @@
                     <div class="modal-overlay" data-close-modal="expiry-modal">
                         <div class="modal-card">
                             <div class="modal-header">
-                                <h3>Change Expiry</h3>
+                                <h3 data-i18n="change_expiry_title">Change Expiry</h3>
                                 <button class="modal-close" data-close-modal="expiry-modal">&times;</button>
                             </div>
                             <div class="modal-body">
                                 <div class="input-field">
-                                    <label for="expiry-datetime-input">Expiry Date & Time</label>
+                                    <label for="expiry-datetime-input" data-i18n="expiry_datetime">Expiry Date & Time</label>
                                     <input type="datetime-local" id="expiry-datetime-input">
                                     <span class="field-hint" id="expiry-tz-label"></span>
                                 </div>
-                                <p class="form-note">Set a new expiry or clear it to make the link permanent. Codes will inherit this expiry.</p>
+                                <p class="form-note" data-i18n="change_expiry_note">Set a new expiry or clear it to make the link permanent. Codes will inherit this expiry.</p>
                             </div>
                             <div class="modal-footer">
-                                <button class="btn-danger" id="expiry-clear-btn">Clear (Never Expire)</button>
-                                <button class="btn-ghost" data-close-modal="expiry-modal">Cancel</button>
-                                <button class="btn-primary" id="expiry-save-btn">Save Expiry</button>
+                                <button class="btn-danger" id="expiry-clear-btn" data-i18n="clear_never_expire">Clear (Never Expire)</button>
+                                <button class="btn-ghost" data-close-modal="expiry-modal" data-i18n="cancel">Cancel</button>
+                                <button class="btn-primary" id="expiry-save-btn" data-i18n="save_expiry">Save Expiry</button>
                             </div>
                         </div>
                     </div>
@@ -152,9 +155,9 @@
                     <div id="channels-container"></div>
                     <div id="empty-state" class="empty-state hidden">
                         <div class="empty-icon">&#9656;</div>
-                        <h4>No channels yet</h4>
-                        <p>Create your first channel to start streaming</p>
-                        <button class="btn-primary" id="empty-create-btn">Create Channel</button>
+                        <h4 data-i18n="no_channels">No channels yet</h4>
+                        <p data-i18n="create_first_channel">Create your first channel to start streaming</p>
+                        <button class="btn-primary" id="empty-create-btn" data-i18n="create_channel_btn">Create Channel</button>
                     </div>
                 </section>
 
@@ -166,9 +169,9 @@
                     <div id="users-container"></div>
                     <div id="users-empty-state" class="empty-state hidden">
                         <div class="empty-icon">&#9824;</div>
-                        <h4>No admin users</h4>
-                        <p>Add your first admin user</p>
-                        <button class="btn-primary" id="users-empty-add-btn">Add User</button>
+                        <h4 data-i18n="no_users">No admin users</h4>
+                        <p data-i18n="add_first_user">Add your first admin user</p>
+                        <button class="btn-primary" id="users-empty-add-btn" data-i18n="add_user">Add User</button>
                     </div>
                 </section>
             </main>
@@ -178,30 +181,30 @@
             <div class="modal-overlay" data-close-modal="add-user-modal">
                 <div class="modal-card">
                     <div class="modal-header">
-                        <h3>Add New User</h3>
+                        <h3 data-i18n="add_user_title">Add New User</h3>
                         <button class="modal-close" data-close-modal="add-user-modal">&times;</button>
                     </div>
                     <div class="modal-body">
                         <div class="input-field">
-                            <label for="add-user-username">Username</label>
-                            <input type="text" id="add-user-username" placeholder="Enter username" autocomplete="off">
+                            <label for="add-user-username" data-i18n="username">Username</label>
+                            <input type="text" id="add-user-username" placeholder="Enter username" data-i18n-placeholder="username_placeholder" autocomplete="off">
                         </div>
                         <div class="input-field">
-                            <label for="add-user-password">Password</label>
-                            <input type="password" id="add-user-password" placeholder="Enter password" autocomplete="off">
+                            <label for="add-user-password" data-i18n="password">Password</label>
+                            <input type="password" id="add-user-password" placeholder="Enter password" data-i18n-placeholder="password_placeholder" autocomplete="off">
                         </div>
                         <div class="input-field">
-                            <label for="add-user-role">Role</label>
+                            <label for="add-user-role" data-i18n="role">Role</label>
                             <select id="add-user-role">
-                                <option value="admin">Admin</option>
-                                <option value="moderator">Moderator</option>
-                                <option value="superadmin">Super Admin</option>
+                                <option value="admin" data-i18n="role_admin">Admin</option>
+                                <option value="moderator" data-i18n="role_moderator">Moderator</option>
+                                <option value="superadmin" data-i18n="role_superadmin">Super Admin</option>
                             </select>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button class="btn-ghost" data-close-modal="add-user-modal">Cancel</button>
-                        <button class="btn-primary" id="confirm-add-user-btn">Add User</button>
+                        <button class="btn-ghost" data-close-modal="add-user-modal" data-i18n="cancel">Cancel</button>
+                        <button class="btn-primary" id="confirm-add-user-btn" data-i18n="add_user">Add User</button>
                     </div>
                 </div>
             </div>
@@ -211,26 +214,26 @@
             <div class="modal-overlay" data-close-modal="edit-user-modal">
                 <div class="modal-card">
                     <div class="modal-header">
-                        <h3>Edit User</h3>
+                        <h3 data-i18n="edit_user_title">Edit User</h3>
                         <button class="modal-close" data-close-modal="edit-user-modal">&times;</button>
                     </div>
                     <div class="modal-body">
                         <div class="input-field">
-                            <label for="edit-user-username">Username</label>
-                            <input type="text" id="edit-user-username" placeholder="Enter username" autocomplete="off">
+                            <label for="edit-user-username" data-i18n="username">Username</label>
+                            <input type="text" id="edit-user-username" placeholder="Enter username" data-i18n-placeholder="username_placeholder" autocomplete="off">
                         </div>
                         <div class="input-field">
-                            <label for="edit-user-role">Role</label>
+                            <label for="edit-user-role" data-i18n="role">Role</label>
                             <select id="edit-user-role">
-                                <option value="admin">Admin</option>
-                                <option value="moderator">Moderator</option>
-                                <option value="superadmin">Super Admin</option>
+                                <option value="admin" data-i18n="role_admin">Admin</option>
+                                <option value="moderator" data-i18n="role_moderator">Moderator</option>
+                                <option value="superadmin" data-i18n="role_superadmin">Super Admin</option>
                             </select>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button class="btn-ghost" data-close-modal="edit-user-modal">Cancel</button>
-                        <button class="btn-primary" id="confirm-edit-user-btn">Save Changes</button>
+                        <button class="btn-ghost" data-close-modal="edit-user-modal" data-i18n="cancel">Cancel</button>
+                        <button class="btn-primary" id="confirm-edit-user-btn" data-i18n="save_changes">Save Changes</button>
                     </div>
                 </div>
             </div>
@@ -240,22 +243,22 @@
             <div class="modal-overlay" data-close-modal="change-password-modal">
                 <div class="modal-card">
                     <div class="modal-header">
-                        <h3>Change Password</h3>
+                        <h3 data-i18n="change_password_title">Change Password</h3>
                         <button class="modal-close" data-close-modal="change-password-modal">&times;</button>
                     </div>
                     <div class="modal-body">
                         <div class="input-field">
-                            <label for="change-pw-username-display">User</label>
+                            <label for="change-pw-username-display" data-i18n="user_label">User</label>
                             <input type="text" id="change-pw-username-display" disabled>
                         </div>
                         <div class="input-field">
-                            <label for="change-pw-new-password">New Password</label>
-                            <input type="password" id="change-pw-new-password" placeholder="Enter new password" autocomplete="off">
+                            <label for="change-pw-new-password" data-i18n="new_password">New Password</label>
+                            <input type="password" id="change-pw-new-password" placeholder="Enter new password" data-i18n-placeholder="new_password_placeholder" autocomplete="off">
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button class="btn-ghost" data-close-modal="change-password-modal">Cancel</button>
-                        <button class="btn-primary" id="confirm-change-pw-btn">Update Password</button>
+                        <button class="btn-ghost" data-close-modal="change-password-modal" data-i18n="cancel">Cancel</button>
+                        <button class="btn-primary" id="confirm-change-pw-btn" data-i18n="update_password">Update Password</button>
                     </div>
                 </div>
             </div>

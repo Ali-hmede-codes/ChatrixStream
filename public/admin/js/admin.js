@@ -53,6 +53,60 @@
     var sidebar = document.querySelector('.sidebar');
     var mobileOverlay = document.getElementById('mobile-overlay');
 
+    let currentLang = localStorage.getItem('chatrix_admin_lang') || 'en';
+    let translations = {};
+
+    async function loadTranslations(lang) {
+        try {
+            const res = await fetch('./locales/' + lang + '.json');
+            translations = await res.json();
+            currentLang = lang;
+            localStorage.setItem('chatrix_admin_lang', lang);
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            applyTranslations();
+            updateLangButton();
+            // Re-render dynamically if needed
+            if (currentView === 'channels') renderChannels();
+            else if (currentView === 'streams') renderStreamsView();
+            else if (currentView === 'users') renderUsers();
+            renderStats(); // Update stats
+        } catch (e) {
+            console.error("Failed to load translations", e);
+        }
+    }
+
+    function t(key) {
+        return translations[key] || key;
+    }
+
+    function applyTranslations() {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (translations[key]) {
+                if (el.tagName === 'INPUT' && el.type === 'button') {
+                    el.value = translations[key];
+                } else {
+                    el.innerHTML = translations[key];
+                }
+            }
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            if (translations[key]) {
+                el.placeholder = translations[key];
+            }
+        });
+    }
+
+    function updateLangButton() {
+        const btnSpan = document.querySelector('#lang-switch-btn span[data-i18n]');
+        if (btnSpan) {
+            btnSpan.textContent = currentLang === 'ar' ? t('switch_to_english') : t('switch_to_arabic');
+        }
+    }
+
+
     function openMobileMenu() {
         sidebar.classList.add('open');
         mobileOverlay.classList.remove('hidden');
@@ -100,7 +154,7 @@
         var username = usernameInput.value.trim();
         var password = passwordInput.value.trim();
         if (!username || !password) {
-            loginError.textContent = 'Username and password are required';
+            loginError.textContent = t('username_password_required');
             loginError.classList.remove('hidden');
             return;
         }
@@ -120,7 +174,7 @@
                 authToken = data.token;
                 localStorage.setItem(TOKEN_KEY, authToken);
                 localStorage.setItem(ADMIN_INFO_KEY, JSON.stringify({ username: data.username, role: data.role }));
-                showToast('Welcome back, ' + data.username, 'success');
+                showToast(t('welcome_back') + ' ' + data.username, 'success');
                 showDashboard();
                 updateAdminInfo();
                 checkCurrentUserRole();
@@ -128,14 +182,14 @@
                 loadUsers();
             } else {
                 var errData = await res.json();
-                loginError.textContent = errData.error || 'Invalid credentials';
+                loginError.textContent = errData.error || t('invalid_credentials');
                 loginError.classList.remove('hidden');
                 loginBtn.disabled = false;
                 loginBtn.querySelector('.btn-text').textContent = 'Sign In';
                 loginBtn.querySelector('.btn-spinner').classList.add('hidden');
             }
         } catch (e) {
-            loginError.textContent = 'Connection error';
+            loginError.textContent = t('connection_error');
             loginError.classList.remove('hidden');
             loginBtn.disabled = false;
             loginBtn.querySelector('.btn-text').textContent = 'Sign In';
@@ -343,7 +397,7 @@
             channelsListSection.classList.remove('hidden');
             renderChannels();
         } else if (view === 'streams') {
-            topBarTitle.textContent = 'Streams & Qualities';
+            topBarTitle.textContent = t('streams_and_qualities');
             streamsViewSection.classList.remove('hidden');
             renderStreamsView();
         } else if (view === 'users') {
@@ -415,7 +469,7 @@
             ? '<span class="meta-tag expiry-tag"><span class="meta-label">Expires:</span> <span class="meta-value ' + expiryClass + '">' + formatDate(channel.link_expires_at) + '</span></span>'
             : '<span class="meta-tag expiry-tag"><span class="meta-label">Expires:</span> <span class="meta-value">Never (set expiry to generate codes)</span></span>';
 
-        var codeReqStatus = channel.code_required === 1 ? 'Code Required' : 'Free Access';
+        var codeReqStatus = channel.code_required === 1 ? t('code_required') : t('free_access');
         var codeReqClass = channel.code_required === 1 ? 'code-required' : 'code-free';
 
         card.innerHTML =
@@ -442,7 +496,7 @@
                             '<input type="checkbox" id="code-required-' + channel.id + '"' + (channel.code_required === 1 ? ' checked' : '') + ' data-action="toggle-code-required" data-id="' + channel.id + '">' +
                             '<span class="toggle-slider"></span>' +
                         '</label>' +
-                        '<span class="setting-hint" id="code-required-hint-' + channel.id + '">' + (channel.code_required === 1 ? 'Viewers must enter a code' : 'Anyone with the link can watch') + '</span>' +
+                        '<span class="setting-hint" id="code-required-hint-' + channel.id + '">' + (channel.code_required === 1 ? t('viewers_must_enter_code') : t('anyone_can_watch')) + '</span>' +
                     '</div>' +
                 '</div>' +
                 '<div class="channel-section">' +
@@ -584,7 +638,7 @@
     }
 
     function buildEncodingSummary(q) {
-        if (q.video_codec === 'copy') return 'stream copy (no transcode)';
+        if (q.video_codec === 'copy') return t('copy_res');
         if (q.video_codec || q.video_bitrate || q.video_resolution) {
             var parts = [];
             if (q.video_codec) parts.push(q.video_codec);
@@ -595,7 +649,7 @@
         var preset = resolvePresetForDisplay(q.quality_label || q.label || '');
         if (preset === 'low') return 'libx264, ~400k, 640x360';
         if (preset === 'medium') return 'libx264, ~1000k, source res';
-        return 'stream copy (no transcode)';
+        return t('copy_res');
     }
 
     async function loadCodes(channelId, isSilent = false) {
@@ -655,11 +709,11 @@
     }
 
     function formatDate(dateStr) {
-        if (!dateStr) return 'Never';
+        if (!dateStr) return t('never');
         try {
             var d = new Date(dateStr);
             if (isNaN(d.getTime())) return dateStr;
-            if (d.getFullYear() >= 9000) return 'Never';
+            if (d.getFullYear() >= 9000) return t('never');
             // Show date in user's local timezone with timezone abbreviation
             return d.toLocaleString(undefined, {
                 year: 'numeric',
@@ -690,7 +744,7 @@
         localStorage.removeItem(ADMIN_INFO_KEY);
         authToken = '';
         showLogin();
-        showToast('Signed out successfully', 'info');
+        showToast(t('signed_out'), 'info');
     }
 
     function openCreateModal() {
@@ -718,7 +772,7 @@
         var codeRequired = document.getElementById('new-channel-code-required').checked;
 
         if (!name) {
-            showToast('Channel name is required', 'error');
+            showToast(t('channel_name_required'), 'error');
             return;
         }
 
@@ -737,7 +791,7 @@
             });
         }
 
-        showToast('Channel "' + name + '" created' + (streamUrl ? ' with main stream' : ''), 'success');
+        showToast(t('channel_created') + ' "' + name + '"' + (streamUrl ? ' ' + t('channel_created_with_stream') : ''), 'success');
         document.getElementById('new-channel-name').value = '';
         document.getElementById('new-channel-stream-url').value = '';
         closeCreateModal();
@@ -800,14 +854,14 @@
 
         if (action === 'copy-link') {
             navigator.clipboard.writeText('https://stream.chatrix.vip/channel/' + btn.dataset.token);
-            showToast('Link copied to clipboard', 'success');
+            showToast(t('copied_to_clipboard'), 'success');
             return;
         }
 
         if (action === 'regenerate-link') {
             if (!confirm('Regenerate link? The old link will stop working immediately.')) return;
             var result = await adminFetch('/channels/' + btn.dataset.id + '/regenerate-link', { method: 'POST' });
-            showToast('Link regenerated', 'success');
+            showToast(t('link_regenerated'), 'success');
             loadChannels();
             return;
         }
@@ -864,7 +918,7 @@
                 method: 'POST',
                 body: body
             });
-            showToast('Quality "' + label + '" added', 'success');
+            showToast(t('quality_added'), 'success');
             loadChannels();
             return;
         }
@@ -876,7 +930,7 @@
                 method: 'POST',
                 body: { count: count }
             });
-            showToast(codes.length + ' codes generated', 'success');
+            showToast(codes.length + ' ' + t('codes_generated'), 'success');
             loadChannels();
             return;
         }
@@ -889,7 +943,7 @@
                 method: 'POST',
                 body: { count: count }
             });
-            showToast(codes.length + ' new codes generated. Old codes invalidated.', 'success');
+            showToast(t('codes_regenerated'), 'success');
             loadChannels();
             return;
         }
@@ -897,7 +951,7 @@
         if (action === 'revoke-code') {
             if (!confirm('Revoke this code and its session?')) return;
             await adminFetch('/codes/' + btn.dataset.code, { method: 'DELETE' });
-            showToast('Code revoked', 'success');
+            showToast(t('code_revoked'), 'success');
             loadChannels();
             return;
         }
@@ -905,7 +959,7 @@
         if (action === 'delete-channel') {
             if (!confirm('Delete this channel? ALL qualities, codes, and sessions will be removed.')) return;
             await adminFetch('/channels/' + btn.dataset.id, { method: 'DELETE' });
-            showToast('Channel deleted', 'success');
+            showToast(t('channel_deleted'), 'success');
             loadChannels();
             return;
         }
@@ -957,7 +1011,7 @@
             };
             try {
                 await adminFetch('/channels/' + channelId + '/qualities/' + qualityId, { method: 'PATCH', body: body });
-                showToast('Quality updated', 'success');
+                showToast(t('quality_updated'), 'success');
                 loadChannels();
             } catch (e) {
                 showToast(e.message || 'Failed to update quality', 'error');
@@ -971,7 +1025,7 @@
             if (!confirm('Remove this quality? The stream will be stopped.')) return;
             try {
                 await adminFetch('/channels/' + channelId + '/qualities/' + qualityId, { method: 'DELETE' });
-                showToast('Quality removed', 'success');
+                showToast(t('quality_removed'), 'success');
                 loadChannels();
             } catch (e) {
                 showToast(e.message || 'Failed to remove quality', 'error');
@@ -1012,7 +1066,7 @@
             });
             try {
                 await adminFetch('/channels/' + channelId + '/qualities', { method: 'POST', body: body });
-                showToast('Quality "' + label + '" added', 'success');
+                showToast(t('quality_added'), 'success');
                 loadChannels();
             } catch (e) {
                 showToast(e.message || 'Failed to add quality', 'error');
@@ -1049,7 +1103,7 @@
                 });
                 var hint = document.getElementById('code-required-hint-' + channelId);
                 if (hint) {
-                    hint.textContent = isChecked ? 'Viewers must enter a code' : 'Anyone with the link can watch';
+                    hint.textContent = isChecked ? t('viewers_must_enter_code') : t('anyone_can_watch');
                 }
                 var codesSection = document.getElementById('codes-section-' + channelId);
                 if (codesSection) {
@@ -1095,14 +1149,14 @@
         }
         await adminFetch('/channels/' + expiryEditChannelId, { method: 'PATCH', body: { link_expires_at: utcValue } });
         expiryModal.classList.add('hidden');
-        showToast('Expiry updated', 'success');
+        showToast(t('expiry_updated'), 'success');
         loadChannels();
     });
 
     expiryClearBtn.addEventListener('click', async function() {
         await adminFetch('/channels/' + expiryEditChannelId, { method: 'PATCH', body: { link_expires_at: null } });
         expiryModal.classList.add('hidden');
-        showToast('Expiry cleared — link will never expire', 'success');
+        showToast(t('expiry_cleared'), 'success');
         loadChannels();
     });
 
@@ -1188,12 +1242,12 @@
         var password = addUserPassword.value.trim();
         var role = addUserRole.value;
         if (!username || !password) {
-            showToast('Username and password are required', 'error');
+            showToast(t('username_password_required'), 'error');
             return;
         }
         try {
             var user = await adminFetch('/users', { method: 'POST', body: { username: username, password: password, role: role } });
-            showToast('User "' + username + '" created', 'success');
+            showToast(t('user_added'), 'success');
             closeAddUserModal();
             loadUsers().then(function() { renderUsers(); });
         } catch (e) {
@@ -1223,7 +1277,7 @@
         }
         try {
             var user = await adminFetch('/users/' + editingUserId, { method: 'PATCH', body: { username: username, role: role } });
-            showToast('User "' + username + '" updated', 'success');
+            showToast(t('user_updated'), 'success');
             closeEditUserModal();
             loadUsers().then(function() { renderUsers(); });
         } catch (e) {
@@ -1252,7 +1306,7 @@
         }
         try {
             await adminFetch('/users/' + editingUserId + '/change-password', { method: 'POST', body: { password: password } });
-            showToast('Password updated', 'success');
+            showToast(t('password_updated'), 'success');
             closeChangePasswordModal();
         } catch (e) {
             showToast(e.message || 'Failed to change password', 'error');
@@ -1263,7 +1317,7 @@
         if (!confirm('Delete user "' + username + '"? They will immediately lose access.')) return;
         try {
             await adminFetch('/users/' + userId, { method: 'DELETE' });
-            showToast('User "' + username + '" deleted', 'success');
+            showToast(t('user_deleted'), 'success');
             loadUsers().then(function() { renderUsers(); });
         } catch (e) {
             showToast(e.message || 'Failed to delete user', 'error');
@@ -1291,4 +1345,14 @@
     }, 5000);
 
     init();
+
+    var langSwitchBtn = document.getElementById('lang-switch-btn');
+    if (langSwitchBtn) {
+        langSwitchBtn.addEventListener('click', function() {
+            var newLang = currentLang === 'en' ? 'ar' : 'en';
+            loadTranslations(newLang);
+        });
+    }
+    loadTranslations(currentLang);
+
 })();
