@@ -146,16 +146,29 @@
     });
     codeInput.addEventListener('input', function(e) {
         let val = e.target.value.toUpperCase();
+        
+        if (val === '') return;
+        
         if (val === 'C' || val === 'CS' || val === 'CS-') {
             e.target.value = val;
             return;
         }
-        if (val.length > 0 && !val.startsWith('CS-')) {
-            let stripped = val.replace(/^(C(S(-?)?)?)?/, '');
-            e.target.value = 'CS-' + stripped;
-        } else {
-            e.target.value = val;
+
+        let codePart = val;
+        
+        // Remove 'CS-' from the beginning, as many times as it appears (e.g., if user pastes 'CS-...' after 'CS-')
+        while (codePart.startsWith('CS-')) {
+            codePart = codePart.substring(3);
         }
+
+        let finalVal = 'CS-' + codePart;
+        
+        // Enforce the max length of 10 manually
+        if (finalVal.length > 10) {
+            finalVal = finalVal.substring(0, 10);
+        }
+        
+        e.target.value = finalVal;
     });
 
     init();
