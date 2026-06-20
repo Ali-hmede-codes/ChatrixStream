@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error:', error);
             if (isFirstLoad) {
                 loadingEl.classList.add('hidden');
-                errorMsgEl.textContent = 'Could not load matches at this time. Please try again later.';
+                errorMsgEl.textContent = 'تعذر تحميل المباريات. يرجى المحاولة لاحقاً.';
                 errorMsgEl.classList.remove('hidden');
             }
         }
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderMatches = (matches) => {
         if (matches.length === 0) {
-            matchesListEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No matches scheduled for today.</p>';
+            matchesListEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">لا توجد مباريات مبرمجة لهذا اليوم.</p>';
             return;
         }
 
@@ -72,9 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mins = diffMins % 60;
                 
                 if (hours > 0) {
-                    countdownStr = `Match will start after ${hours}h ${mins}m`;
+                    countdownStr = `تبدأ المباراة بعد ${hours}س ${mins}د`;
                 } else {
-                    countdownStr = `Match will start after ${mins}m`;
+                    countdownStr = `تبدأ المباراة بعد ${mins}د`;
                 }
             } else if (match.status == 1 || (match.status == 0 && diffMs <= 0)) {
                 // Approximate Live status if no explicit status=1 but time passed
@@ -83,21 +83,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let scoreDisplay = match.score;
             if (scoreDisplay === '-' || scoreDisplay === '') {
-                scoreDisplay = 'VS';
+                scoreDisplay = '-';
             }
 
             let statusDisplay = '';
             if (match.status == 2) {
-                statusDisplay = 'Finished';
+                statusDisplay = 'انتهت';
             } else if (isLive) {
-                statusDisplay = '<span style="color: var(--error); display: flex; align-items: center; gap: 4px;"><span class="live-dot" style="background: var(--error); box-shadow: 0 0 8px var(--error); animation: livePulse 1.5s infinite;"></span> LIVE</span>';
+                statusDisplay = '<span style="color: var(--error); display: flex; align-items: center; gap: 4px;"><span class="live-dot" style="background: var(--error); box-shadow: 0 0 8px var(--error); animation: livePulse 1.5s infinite;"></span> مباشر</span>';
             } else {
-                statusDisplay = 'Not Started';
+                statusDisplay = 'لم تبدأ';
             }
 
-            const leagueLogoUrl = match.league_logo ? `https://kora-plus.app/uploads/leagues/${match.league_logo}` : '';
-            const homeLogoUrl = match.home_logo ? `https://kora-plus.app/uploads/teams/${match.home_logo}` : '';
-            const awayLogoUrl = match.away_logo ? `https://kora-plus.app/uploads/teams/${match.away_logo}` : '';
+            const leagueLogoUrl = match.league_logo ? `https://cdn.kora-api.space/uploads/league/${match.league_logo}` : '';
+            const homeLogoUrl = match.home_logo ? `https://cdn.kora-api.space/uploads/team/${match.home_logo}` : '';
+            const awayLogoUrl = match.away_logo ? `https://cdn.kora-api.space/uploads/team/${match.away_logo}` : '';
+
 
             html += `
                 <div class="match-card">
