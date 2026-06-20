@@ -17,6 +17,7 @@ const streamRoutes = require('./routes/stream');
 const hlsRoutes = require('./routes/hls');
 const pipeRoutes = require('./routes/pipe');
 const sseRoutes = require('./routes/sse');
+const matchesRoutes = require('./routes/matches');
 
 const db = initDB(process.env.DB_PATH);
 seedAdminUsers(db);
@@ -88,6 +89,7 @@ app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
 app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
 app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
+app.use('/api/matches', matchesRoutes);
 
 app.get('/internal/stream/:channelId/:quality', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
@@ -114,6 +116,10 @@ app.get('/favicon.ico', (req, res) => {
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/matches', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'matches.html'));
 });
 
 app.get('/player/:channelToken', (req, res) => {

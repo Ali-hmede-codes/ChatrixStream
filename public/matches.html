@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatrixStream | Live Matches</title>
+    <meta name="description" content="Watch high quality streams instantly with ChatrixStream">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <div class="bg-effects">
+        <div class="glow-blob blob-1"></div>
+        <div class="glow-blob blob-2"></div>
+        <div class="glow-blob blob-3"></div>
+    </div>
+
+    <div id="app" class="matches-app">
+        <div class="glass-card matches-container">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                </div>
+                <h1>Today's Matches</h1>
+            </div>
+            
+            <div id="loading" class="hidden" style="margin-top: 2rem;">
+                <div class="spinner-container">
+                    <div class="spinner"></div>
+                </div>
+                <p id="loading-text">Loading matches...</p>
+            </div>
+
+            <div id="matches-list" class="matches-list">
+                <!-- Matches will be injected here by JS -->
+            </div>
+            
+            <p id="error-msg" class="error hidden" style="margin-top: 1rem; text-align: center;"></p>
+        </div>
+    </div>
+    
+    <script src="/js/matches.js"></script>
+</body>
+
+</html>

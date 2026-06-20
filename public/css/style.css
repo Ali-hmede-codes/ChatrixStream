@@ -803,3 +803,29 @@ video::-webkit-media-controls-fullscreen-button {
     50% { opacity: 0.4; transform: scale(1.15); }
 }
 
+/* Matches Page Styles */
+.matches-app { padding: 40px 20px; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+.matches-container { max-width: 800px; width: 100%; margin: 0 auto; padding: 32px; }
+.matches-list { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+.match-card { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: flex; align-items: center; justify-content: space-between; transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease; position: relative; overflow: hidden; }
+.match-card:hover { transform: translateY(-2px); border-color: rgba(124, 58, 237, 0.4); background: rgba(124, 58, 237, 0.05); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.match-team { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+.match-team.away { flex-direction: row-reverse; text-align: right; }
+.team-logo { width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+.team-name { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.match-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 0.8; }
+.match-time { font-size: 0.95rem; color: white; font-weight: 600; background: var(--accent); padding: 4px 16px; border-radius: 20px; box-shadow: 0 4px 12px var(--accent-glow); }
+.match-score { font-size: 2.2rem; font-weight: 700; color: var(--text-primary); letter-spacing: 4px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+.match-status { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 1px; }
+.match-countdown { font-size: 0.85rem; color: #ec4899; font-weight: 600; background: rgba(236, 72, 153, 0.1); border: 1px solid rgba(236, 72, 153, 0.3); padding: 6px 16px; border-radius: 12px; margin-top: 8px; text-align: center; }
+.league-info { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); text-align: center; font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(0,0,0,0.4); padding: 2px 10px; border-radius: 10px; }
+.league-logo { width: 16px; height: 16px; object-fit: contain; }
+
+@media (max-width: 768px) {
+    .match-card { flex-direction: column; padding: 32px 16px 20px; gap: 20px; }
+    .league-info { top: 8px; }
+    .match-team, .match-team.away { flex-direction: column; text-align: center; width: 100%; gap: 8px; }
+    .match-center { order: -1; margin-bottom: 8px; }
+    .team-name { white-space: normal; }
+    .team-logo { width: 64px; height: 64px; }
+}
