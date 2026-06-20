@@ -5,6 +5,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isFirstLoad = true;
 
+    // Handle missing images globally to satisfy CSP
+    document.addEventListener('error', function(e) {
+        if (e.target.tagName && e.target.tagName.toLowerCase() === 'img') {
+            e.target.style.display = 'none';
+        }
+    }, true);
+
     // Get today's date in YYYY-MM-DD
     const getTodayDate = () => {
         const today = new Date();
@@ -107,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     
                     <div class="match-team home">
-                        <img src="${homeLogoUrl}" class="team-logo" alt="${match.home}" onerror="this.style.display='none'">
+                        <img src="${homeLogoUrl}" class="team-logo" alt="${match.home}">
                         <div class="team-name">${match.home}</div>
                     </div>
 
@@ -119,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     <div class="match-team away">
-                        <img src="${awayLogoUrl}" class="team-logo" alt="${match.away}" onerror="this.style.display='none'">
+                        <img src="${awayLogoUrl}" class="team-logo" alt="${match.away}">
                         <div class="team-name">${match.away}</div>
                     </div>
 
