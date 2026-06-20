@@ -858,7 +858,7 @@ video::-webkit-media-controls-fullscreen-button {
     box-shadow: 0 0 15px rgba(236,72,153,0.3), inset 0 0 15px rgba(236,72,153,0.2);
 }
 
-.league-info { position: absolute; top: -1px; right: 50%; left: auto; transform: translateX(50%); font-size: 0.85rem; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(124, 58, 237, 0.2); backdrop-filter: blur(10px); padding: 6px 20px; border-radius: 0 0 12px 12px; border: 1px solid rgba(124, 58, 237, 0.4); border-top: none; white-space: nowrap; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.2); z-index: 2; }
+.league-info { position: absolute; top: -1px; right: 32px; left: auto; transform: none; font-size: 0.85rem; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(124, 58, 237, 0.2); backdrop-filter: blur(10px); padding: 6px 20px; border-radius: 0 0 12px 12px; border: 1px solid rgba(124, 58, 237, 0.4); border-top: none; white-space: nowrap; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.2); z-index: 2; }
 .league-logo { width: 20px; height: 20px; object-fit: contain; }
 
 @media (max-width: 768px) {
