@@ -4,6 +4,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMsgEl = document.getElementById('error-msg');
 
     let isFirstLoad = true;
+    let allMatches = [];
+    let currentFilter = 'all';
+
+    const filtersContainer = document.getElementById('matches-filters');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            currentFilter = e.target.getAttribute('data-filter');
+            applyFilterAndRender();
+        });
+    });
 
     // Handle missing images globally to satisfy CSP
     document.addEventListener('error', function(e) {
@@ -36,7 +50,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            renderMatches(data.matches || []);
+            allMatches = data.matches || [];
+            
+            if (allMatches.length > 0) {
+                filtersContainer.classList.remove('hidden');
+            }
+            
+            applyFilterAndRender();
             
             if (isFirstLoad) {
                 loadingEl.classList.add('hidden');
@@ -52,9 +72,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const applyFilterAndRender = () => {
+        const now = new Date();
+        const filtered = allMatches.filter(match => {
+            if (currentFilter === 'all') return true;
+            
+            const matchDate = new Date(`${match.date}T${match.time}:00Z`);
+            const diffMs = matchDate - now;
+            const isLive = match.status == 1 || (match.status == 0 && diffMs <= 0);
+            
+            if (currentFilter === 'finished') {
+                return match.status == 2;
+            } else if (currentFilter === 'live') {
+                return isLive && match.status != 2;
+            } else if (currentFilter === 'not_started') {
+                return match.status == 0 && diffMs > 0;
+            }
+            return true;
+        });
+        
+        renderMatches(filtered);
+    };
+
     const renderMatches = (matches) => {
         if (matches.length === 0) {
-            matchesListEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">لا توجد مباريات مبرمجة لهذا اليوم.</p>';
+            matchesListEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">لا توجد مباريات مطابقة للفلتر المحدد.</p>';
             return;
         }
 
