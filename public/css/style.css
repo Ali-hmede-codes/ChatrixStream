@@ -858,16 +858,20 @@ video::-webkit-media-controls-fullscreen-button {
 .league-logo { width: 20px; height: 20px; object-fit: contain; }
 
 @media (max-width: 768px) {
-    .matches-container { padding: 24px 16px; }
-    .match-card { padding: 56px 12px 20px; gap: 8px; border-radius: 12px; }
-    .league-info { top: 12px; right: 50%; left: auto; transform: translateX(50%); font-size: 0.8rem; padding: 4px 12px; }
-    .league-info.rtl-pos { right: 50%; left: auto; }
-    .match-team { gap: 8px; flex-direction: column; text-align: center; justify-content: flex-start; }
-    .match-team.away { flex-direction: column; text-align: center; }
-    .team-logo { width: 48px; height: 48px; }
-    .team-name { font-size: 1rem; white-space: normal; line-height: 1.2; }
-    .match-score { font-size: 1.8rem; letter-spacing: 2px; }
-    .match-time { font-size: 0.85rem; padding: 4px 12px; }
-    .match-status { font-size: 0.8rem; }
-    .match-countdown { font-size: 0.8rem; padding: 6px 12px; width: 100%; box-sizing: border-box; }
+    .matches-container { padding: 16px 8px; border-radius: 12px; }
+    .match-card { padding: 24px 8px 16px; gap: 4px; border-radius: 12px; flex-direction: row; align-items: center; }
+    .league-info { top: 0; right: 50%; left: auto; transform: translateX(50%); font-size: 0.7rem; padding: 2px 12px; border-radius: 0 0 8px 8px; }
+    .league-info.rtl-pos { right: 50%; left: auto; transform: translateX(50%); }
+    
+    .match-team { gap: 4px; flex-direction: row; text-align: right; flex: 1; justify-content: flex-start; }
+    .match-team.away { flex-direction: row-reverse; text-align: left; justify-content: flex-start; }
+    
+    .team-logo { width: 32px; height: 32px; min-width: 32px; }
+    .team-name { font-size: 0.85rem; white-space: normal; line-height: 1.1; word-break: break-word; }
+    
+    .match-center { flex: 0.8; gap: 6px; }
+    .match-score { font-size: 1.5rem; letter-spacing: 2px; margin: 0; }
+    .match-time { font-size: 0.75rem; padding: 2px 8px; }
+    .match-status { font-size: 0.7rem; letter-spacing: 0.5px; }
+    .match-countdown { font-size: 0.7rem; padding: 4px 8px; border-radius: 4px; margin-top: 4px; }
 }
