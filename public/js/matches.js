@@ -130,9 +130,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 isLive = true;
             }
 
-            let scoreDisplay = match.score;
-            if (scoreDisplay === '-' || scoreDisplay === '') {
-                scoreDisplay = '-';
+            let scoreDisplay = '-';
+            if (match.score && match.score !== '-' && match.score !== '') {
+                // Ensure the score order visually matches the DOM layout in RTL
+                // DOM order (RTL visually): Away (Left) | Score | Home (Right)
+                // So Score must be "AwayScore - HomeScore" if rendered LTR
+                if (match.home_score !== undefined && match.away_score !== undefined && match.home_score.trim() !== '' && match.away_score.trim() !== '') {
+                    scoreDisplay = `${match.away_score.trim()} - ${match.home_score.trim()}`;
+                } else {
+                    const parts = match.score.split('-');
+                    if (parts.length === 2) {
+                        scoreDisplay = `${parts[1].trim()} - ${parts[0].trim()}`;
+                    } else {
+                        scoreDisplay = match.score;
+                    }
+                }
             }
 
             let statusDisplay = '';
