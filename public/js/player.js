@@ -157,9 +157,10 @@
         return sorted.length > 0 ? sorted[sorted.length - 1].label : null;
     }
 
-    function createNativeHlsWrapper() {
+    function createHlsWrapper() {
         var eventMap = {};
         var fullscreenState = false;
+        var hlsInstance = null;
 
         var wrapper = {
             play: function() { return videoEl.play(); },
@@ -182,21 +183,66 @@
             },
             src: function(val) {
                 if (val !== undefined) {
-                    if (typeof val === 'string') {
-                        videoEl.src = val;
-                    } else if (val && val.src) {
-                        videoEl.src = val.src;
+                    var url = typeof val === 'string' ? val : (val && val.src ? val.src : null);
+                    if (!url) return wrapper;
+
+                    if (hlsInstance) {
+                        hlsInstance.destroy();
+                        hlsInstance = null;
+                    }
+
+                    if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                        // Native HLS (iOS / Safari)
+                        videoEl.src = url;
+                    } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                        // hls.js (Android / Windows)
+                        var isStruggling = isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling();
+                        hlsInstance = new Hls({
+                            maxBufferLength: isStruggling ? 20 : 40,
+                            maxMaxBufferLength: 80,
+                            liveSyncDurationCount: 5, // Starts further back for 10-15s buffer
+                            liveMaxLatencyDurationCount: 15, // Allows more latency before forcing a seek
+                            enableWorker: true
+                        });
+
+                        hlsInstance.on(Hls.Events.ERROR, function(event, data) {
+                            if (data.fatal) {
+                                console.error('HLS error:', data);
+                                switch(data.type) {
+                                    case Hls.ErrorTypes.NETWORK_ERROR:
+                                        videoEl.dispatchEvent(new Event('error'));
+                                        break;
+                                    case Hls.ErrorTypes.MEDIA_ERROR:
+                                        hlsInstance.recoverMediaError();
+                                        break;
+                                    default:
+                                        hlsInstance.destroy();
+                                        videoEl.dispatchEvent(new Event('error'));
+                                        break;
+                                }
+                            }
+                        });
+
+                        hlsInstance.loadSource(url);
+                        hlsInstance.attachMedia(videoEl);
                     }
                     return wrapper;
                 }
                 return videoEl.src;
             },
             reset: function() {
+                if (hlsInstance) {
+                    hlsInstance.destroy();
+                    hlsInstance = null;
+                }
                 videoEl.removeAttribute('src');
                 try { videoEl.load(); } catch(e) {}
             },
             error: function() {
                 var e = videoEl.error;
+                if (!e && hlsInstance) {
+                    return { code: 2, message: 'Simulated HLS network error' };
+                }
                 if (!e) return null;
                 return { code: e.code, message: e.message || '' };
             },
@@ -305,10 +351,9 @@
 
         channelName.textContent = channelInfo.channel_name;
 
-        // Detect pipe mode: use mpegts.js direct pipe for non-iOS/Safari
-        // iOS Safari doesn't support MSE well for live streaming, so it uses HLS
-        usePipeMode = !isIOS() && !isSafari() && typeof mpegts !== 'undefined' && mpegts.isSupported();
-        console.log('Player mode:', usePipeMode ? 'pipe (mpegts.js)' : 'hls (native html5)');
+        // Force HLS mode for all devices to ensure stability.
+        usePipeMode = false;
+        console.log('Player mode: hls (native or hls.js)');
 
         if (channelInfo.expires_at) {
             const expires = new Date(channelInfo.expires_at);
@@ -468,8 +513,8 @@
             // Pipe mode: use native <video> + mpegts.js, no Video.js needed
             vjsPlayer = createMpegtsWrapper();
         } else {
-            // HLS mode: use native <video> with HLS natively supported by Safari
-            vjsPlayer = createNativeHlsWrapper();
+            // HLS mode: use native <video> with HLS natively supported by Safari, or hls.js for Android
+            vjsPlayer = createHlsWrapper();
         }
 
         videoEl.classList.remove('video-js', 'vjs-default-skin');
