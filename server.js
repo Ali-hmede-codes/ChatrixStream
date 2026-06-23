@@ -48,7 +48,8 @@ const pipeConverter = new PipeConverter({
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 const compression = require('compression');
 app.use(compression({
@@ -83,7 +84,7 @@ app.use((req, res, next) => {
     next();
 });
 
-const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 20 });
+const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 100000 });
 
 app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
 app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
