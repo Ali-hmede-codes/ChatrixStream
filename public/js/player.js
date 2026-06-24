@@ -191,11 +191,8 @@
                         hlsInstance = null;
                     }
 
-                    if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-                        // Native HLS (iOS / Safari)
-                        videoEl.src = url;
-                    } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                        // hls.js (Android / Windows)
+                    if (typeof Hls !== 'undefined' && Hls.isSupported() && !isSafari() && !isIOS()) {
+                        // hls.js (Android / Windows / non-Safari desktop)
                         var isStruggling = isLowBandwidth() || isVeryLowBandwidth() || isCellularOrStruggling();
                         hlsInstance = new Hls({
                             maxBufferLength: isStruggling ? 20 : 40,
@@ -225,6 +222,9 @@
 
                         hlsInstance.loadSource(url);
                         hlsInstance.attachMedia(videoEl);
+                    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                        // Native HLS (iOS / Safari)
+                        videoEl.src = url;
                     }
                     return wrapper;
                 }
