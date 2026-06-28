@@ -1,5 +1,5 @@
 const { PassThrough } = require('stream');
-const { http: followHttp, https: followHttps } = require('follow-redirects');
+const sourceHandlers = require('./sourceHandlers');
 
 class StreamManager {
     constructor(options = {}) {
@@ -29,7 +29,6 @@ class StreamManager {
         }
 
         const parsedUrl = new URL(state.streamUrl);
-        const requester = parsedUrl.protocol === 'https:' ? followHttps : followHttp;
 
         const requestOptions = {
             timeout: this.sourceTimeout,
@@ -50,57 +49,58 @@ class StreamManager {
 
         let isIntentionalAbort = false;
 
-        const req = requester.get(state.streamUrl, requestOptions, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400) {
-                console.log(`Stream redirect: ${res.statusCode} -> ${res.headers.location}`);
-                res.resume();
-                this._scheduleReconnect(key);
-                return;
-            }
-
-            if (res.statusCode !== 200) {
-                console.error(`Stream source returned status ${res.statusCode} for ${state.streamUrl}`);
-                res.resume();
-                this._scheduleReconnect(key);
-                return;
-            }
-
-            console.log(`Stream connected: ${state.streamUrl} (status ${res.statusCode}, type ${res.headers['content-type'] || 'unknown'})`);
-
-            state.sourceResponse = res;
-
-            res.on('error', (err) => {
-                if (!isIntentionalAbort && err.message !== 'aborted') {
-                    console.error('Stream source response error:', err.message);
+        const handle = sourceHandlers.acquireSource(
+            state.streamUrl,
+            requestOptions,
+            (res, finalUrl) => {
+                if (res.statusCode >= 300 && res.statusCode < 400) {
+                    res.resume();
+                    this._scheduleReconnect(key);
+                    return;
                 }
-                res.unpipe(state.passThrough);
+
+                if (res.statusCode !== 200) {
+                    const via = finalUrl && finalUrl !== state.streamUrl ? ` (via ${state.streamUrl})` : '';
+                    console.error(`Stream source returned status ${res.statusCode} for ${finalUrl}${via}`);
+                    res.resume();
+                    this._scheduleReconnect(key);
+                    return;
+                }
+
+                console.log(`Stream connected: ${finalUrl} (status ${res.statusCode}, type ${res.headers['content-type'] || 'unknown'})`);
+
+                state.sourceResponse = res;
+
+                res.on('error', (err) => {
+                    if (!isIntentionalAbort && err.message !== 'aborted') {
+                        console.error('Stream source response error:', err.message);
+                    }
+                    res.unpipe(state.passThrough);
+                    this._scheduleReconnect(key);
+                });
+
+                res.on('end', () => {
+                    console.log('Stream source ended, reconnecting...');
+                    res.unpipe(state.passThrough);
+                    this._scheduleReconnect(key);
+                });
+
+                res.pipe(state.passThrough, { end: false });
+            },
+            (err) => {
+                if (!isIntentionalAbort && err.message !== 'socket hang up' && err.message !== 'timeout') {
+                    console.error('Stream source request error:', err.message);
+                }
                 this._scheduleReconnect(key);
-            });
-
-            res.on('end', () => {
-                console.log('Stream source ended, reconnecting...');
-                res.unpipe(state.passThrough);
-                this._scheduleReconnect(key);
-            });
-
-            res.pipe(state.passThrough, { end: false });
-        });
-
-        state.sourceRequest = req;
-
-        req.on('error', (err) => {
-            if (!isIntentionalAbort && err.message !== 'socket hang up') {
-                console.error('Stream source request error:', err.message);
             }
-            this._scheduleReconnect(key);
-        });
+        );
 
-        req.on('timeout', () => {
-            console.error('Stream source request timeout for', state.streamUrl);
-            isIntentionalAbort = true;
-            req.destroy();
-            this._scheduleReconnect(key);
-        });
+        state.sourceRequest = {
+            destroy: () => {
+                isIntentionalAbort = true;
+                handle.destroy();
+            }
+        };
     }
 
     startStream(channelId, qualityLabel, streamUrl) {
