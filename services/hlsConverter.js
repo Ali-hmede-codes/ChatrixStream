@@ -360,7 +360,7 @@ class HlsConverter {
         args.push('-threads', '0');
         args.push('-thread_queue_size', '512');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
-        args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
+        args.push('-fflags', '+nobuffer+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
         args.push('-probesize', '1000000');
         args.push('-rw_timeout', '15000000');
@@ -372,6 +372,7 @@ class HlsConverter {
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
+        args.push('-use_wallclock_as_timestamps', '1');
         args.push('-i', urlWithoutCreds);
 
         if (preset.copyVideo) {
@@ -397,6 +398,7 @@ class HlsConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
+        args.push('-async', '1');
         args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
@@ -603,9 +605,6 @@ class HlsConverter {
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
                 const rewrittenLine = line + '?session=' + sessionToken + '&_d=' + (discontinuityCount || 0) + '&_s=' + (streamSessionId || 0);
-                if (startNumber > 0 && line === `seq_${startNumber}.ts`) {
-                    return ['#EXT-X-DISCONTINUITY', rewrittenLine];
-                }
                 return [rewrittenLine];
             }
             return [line];

@@ -197,7 +197,7 @@
                         hlsInstance = new Hls({
                             maxBufferLength: isStruggling ? 20 : 40,
                             maxMaxBufferLength: 80,
-                            liveSyncDurationCount: 5, // Starts further back for 10-15s buffer
+                            liveSyncDurationCount: 3, // Starts slightly back for 6-10s buffer
                             liveMaxLatencyDurationCount: 15, // Allows more latency before forcing a seek
                             enableWorker: true
                         });
