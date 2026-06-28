@@ -87,7 +87,7 @@ class HlsConverter {
         this.activeConversions = new Map();
         this.tempDir = options.tempDir || path.join(process.cwd(), 'tmp', 'hls');
         this.segmentDuration = options.segmentDuration || 2;
-        this.listSize = options.listSize || 5;
+        this.listSize = options.listSize || 10;
         this.idleTimeout = options.idleTimeout || 30000;
         this.idleGrace = options.idleGrace || 5000;
         this.restartDelay = options.restartDelay || 3000;
@@ -493,17 +493,37 @@ class HlsConverter {
 
         if (state.idleTimer) clearTimeout(state.idleTimer);
 
-        const checkInterval = this.idleTimeout + this.idleGrace;
+        const checkInterval = 5000;
 
         state.idleTimer = setTimeout(() => {
-            state.idleTimer = null;
+            const currentState = this.activeConversions.get(key);
+            if (!currentState) return;
+            
+            currentState.idleTimer = null;
             const now = Date.now();
-            if (now - state.lastAccess > this.idleTimeout) {
+            
+            if (now - currentState.lastAccess > this.idleTimeout) {
                 console.log('HlsConverter: stream idle, stopping', key);
-                this.stopConversion(state.channelId, state.qualityLabel);
-            } else {
-                this._scheduleIdleCheck(key);
+                this.stopConversion(currentState.channelId, currentState.qualityLabel);
+                return;
             }
+
+            if (currentState.ffmpegProcess && currentState.manifestReady) {
+                const manifestPath = path.join(currentState.dir, 'index.m3u8');
+                try {
+                    if (fs.existsSync(manifestPath)) {
+                        const stats = fs.statSync(manifestPath);
+                        if (now - stats.mtimeMs > 15000) {
+                            console.log('HlsConverter: watchdog detected stalled stream (no manifest update in 15s) for', key);
+                            currentState.ffmpegProcess.kill('SIGKILL');
+                        }
+                    }
+                } catch (e) {
+                    console.error('HlsConverter: watchdog error', e);
+                }
+            }
+
+            this._scheduleIdleCheck(key);
         }, checkInterval);
     }
 
@@ -583,10 +603,22 @@ class HlsConverter {
     rewriteManifest(manifestContent, sessionToken, discontinuityCount, streamSessionId, startNumber) {
         let hasIndependentSegments = false;
         let hasDiscontinuitySequence = false;
-        const lines = manifestContent.split('\n').flatMap(line => {
-            // Remove PLAYLIST-TYPE entirely — the HLS spec only allows EVENT or VOD.
-            // Omitting it is correct for a live sliding-window playlist.
-            // The non-standard "LIVE" value was confusing Video.js's live detection.
+        let mediaSequence = 0;
+
+        const lines = manifestContent.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+                mediaSequence = parseInt(line.split(':')[1], 10);
+            }
+        }
+
+        let currentDiscontinuitySeq = discontinuityCount;
+        if (startNumber > 0 && mediaSequence <= startNumber) {
+            currentDiscontinuitySeq = Math.max(0, discontinuityCount - 1);
+        }
+
+        const rewrittenLines = lines.flatMap(line => {
             if (line.startsWith('#EXT-X-PLAYLIST-TYPE')) {
                 return [];
             }
@@ -595,40 +627,42 @@ class HlsConverter {
             }
             if (line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
                 hasDiscontinuitySequence = true;
-                return ['#EXT-X-DISCONTINUITY-SEQUENCE:' + (discontinuityCount || 0)];
+                return ['#EXT-X-DISCONTINUITY-SEQUENCE:' + currentDiscontinuitySeq];
             }
             if (line.startsWith('#EXT-X-ENDLIST')) {
                 return [];
             }
             if (line.match(/^seq_\d+\.ts/) && !line.includes('?session=')) {
                 const rewrittenLine = line + '?session=' + sessionToken + '&_d=' + (discontinuityCount || 0) + '&_s=' + (streamSessionId || 0);
+                
+                const match = line.match(/^seq_(\d+)\.ts/);
+                if (match && parseInt(match[1], 10) === startNumber && startNumber > 0) {
+                    return ['#EXT-X-DISCONTINUITY', rewrittenLine];
+                }
+
                 return [rewrittenLine];
             }
             return [line];
         }).filter(line => line !== null);
 
-        const versionIdx = lines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
+        const versionIdx = rewrittenLines.findIndex(l => l.startsWith('#EXT-X-VERSION'));
         const insertIdx = versionIdx !== -1 ? versionIdx + 1 : 1;
 
         if (!hasIndependentSegments) {
-            lines.splice(insertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
+            rewrittenLines.splice(insertIdx, 0, '#EXT-X-INDEPENDENT-SEGMENTS');
         }
 
-        // Add start offset to force players (like iOS Safari) to start playing 6 seconds behind the live edge
-        // This provides a safe buffer cushion to prevent immediate stalling on mobile
-        const startOffsetIdx = lines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
+        const startOffsetIdx = rewrittenLines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
         const finalInsertIdx = startOffsetIdx !== -1 ? startOffsetIdx + 1 : insertIdx;
-        lines.splice(finalInsertIdx, 0, '#EXT-X-START:TIME-OFFSET=-6.0');
+        rewrittenLines.splice(finalInsertIdx, 0, '#EXT-X-START:TIME-OFFSET=-6.0');
 
-        // Add discontinuity sequence tag if FFmpeg has restarted
-        // This tells the player to expect timestamp jumps between segments
         if (!hasDiscontinuitySequence && discontinuityCount > 0) {
-            const indIdx = lines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
+            const indIdx = rewrittenLines.findIndex(l => l.startsWith('#EXT-X-INDEPENDENT-SEGMENTS'));
             const discInsertIdx = indIdx !== -1 ? indIdx + 1 : insertIdx + 1;
-            lines.splice(discInsertIdx, 0, '#EXT-X-DISCONTINUITY-SEQUENCE:' + discontinuityCount);
+            rewrittenLines.splice(discInsertIdx, 0, '#EXT-X-DISCONTINUITY-SEQUENCE:' + currentDiscontinuitySeq);
         }
 
-        return lines.join('\n');
+        return rewrittenLines.join('\n');
     }
 
     getDiscontinuityCount(channelId, qualityLabel) {

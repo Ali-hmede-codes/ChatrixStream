@@ -288,11 +288,11 @@ module.exports = function(db, hlsConverter) {
         // Try to get segment data from in-memory cache first, then disk
         let segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
 
-        // If segment not found, wait and retry up to 2 times.
+        // If segment not found, wait and retry up to 4 times (2 seconds total).
         // Handles the race between the manifest listing a new segment
         // and the segment file appearing on disk (especially with temp_file flag).
         if (!segmentData) {
-            for (let retry = 0; retry < 2; retry++) {
+            for (let retry = 0; retry < 4; retry++) {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
                 if (segmentData) break;
