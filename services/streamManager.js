@@ -7,7 +7,7 @@ class StreamManager {
         this.highWaterMark = options.highWaterMark || 1048576;
         this.idleTimeout = options.idleTimeout || 30000;
         this.reconnectDelay = options.reconnectDelay || 2000;
-        this.sourceTimeout = options.sourceTimeout || 15000;
+        this.sourceTimeout = options.sourceTimeout || 30000;
     }
 
     _getKey(channelId, qualityLabel) {
@@ -19,8 +19,13 @@ class StreamManager {
         if (!state) return;
 
         if (state.sourceResponse) {
+            state.sourceResponse.unpipe(state.passThrough);
             state.sourceResponse.destroy();
             state.sourceResponse = null;
+        }
+        if (state.sourceRequest) {
+            state.sourceRequest.destroy();
+            state.sourceRequest = null;
         }
 
         const parsedUrl = new URL(state.streamUrl);
@@ -43,6 +48,8 @@ class StreamManager {
             requestOptions.headers['Authorization'] = 'Basic ' + auth;
         }
 
+        let isIntentionalAbort = false;
+
         const req = requester.get(state.streamUrl, requestOptions, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400) {
                 console.log(`Stream redirect: ${res.statusCode} -> ${res.headers.location}`);
@@ -63,25 +70,34 @@ class StreamManager {
             state.sourceResponse = res;
 
             res.on('error', (err) => {
-                console.error('Stream source response error:', err.message);
+                if (!isIntentionalAbort && err.message !== 'aborted') {
+                    console.error('Stream source response error:', err.message);
+                }
+                res.unpipe(state.passThrough);
                 this._scheduleReconnect(key);
             });
 
             res.on('end', () => {
                 console.log('Stream source ended, reconnecting...');
+                res.unpipe(state.passThrough);
                 this._scheduleReconnect(key);
             });
 
             res.pipe(state.passThrough, { end: false });
         });
 
+        state.sourceRequest = req;
+
         req.on('error', (err) => {
-            console.error('Stream source request error:', err.message);
+            if (!isIntentionalAbort && err.message !== 'socket hang up') {
+                console.error('Stream source request error:', err.message);
+            }
             this._scheduleReconnect(key);
         });
 
         req.on('timeout', () => {
             console.error('Stream source request timeout for', state.streamUrl);
+            isIntentionalAbort = true;
             req.destroy();
             this._scheduleReconnect(key);
         });
@@ -195,7 +211,11 @@ class StreamManager {
         if (state.idleTimer) clearTimeout(state.idleTimer);
         if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
 
-        if (state.sourceResponse) state.sourceResponse.destroy();
+        if (state.sourceResponse) {
+            state.sourceResponse.unpipe(state.passThrough);
+            state.sourceResponse.destroy();
+        }
+        if (state.sourceRequest) state.sourceRequest.destroy();
         state.passThrough.destroy();
 
         for (const client of state.clients) {
