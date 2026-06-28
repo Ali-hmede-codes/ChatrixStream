@@ -1,30 +1,12 @@
 const express = require('express');
-const { validateSession } = require('../services/codeGenerator');
+const SessionCache = require('../services/sessionCache');
 
-const SESSION_CACHE_TTL = 30000;
-const sessionCache = new Map();
 const SESSION_CHECK_MS = 30000;
-
-function getCachedSession(db, sessionToken) {
-    const now = Date.now();
-    const cached = sessionCache.get(sessionToken);
-    if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
-        return cached.result;
-    }
-    const result = validateSession(db, sessionToken);
-    sessionCache.set(sessionToken, { result, timestamp: now });
-    if (sessionCache.size > 500) {
-        for (const [key, val] of sessionCache) {
-            if (now - val.timestamp > SESSION_CACHE_TTL) {
-                sessionCache.delete(key);
-            }
-        }
-    }
-    return result;
-}
 
 module.exports = function(db, pipeConverter) {
     const router = express.Router();
+
+    const sessionCache = new SessionCache(db, 30000, 500);
 
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
     const getQualityByChannelAndLabel = db.prepare('SELECT * FROM channel_qualities WHERE channel_id = ? AND quality_label = ?');
@@ -43,7 +25,7 @@ module.exports = function(db, pipeConverter) {
             return res.status(403).json({ error: 'No session token', expired: true });
         }
 
-        const session = getCachedSession(db, sessionToken);
+        const session = sessionCache.get(sessionToken);
         if (!session.valid) {
             return res.status(403).json({ error: session.error, expired: true });
         }
@@ -54,7 +36,7 @@ module.exports = function(db, pipeConverter) {
         }
 
         if (session.channel_id !== channel.id) {
-            sessionCache.delete(sessionToken);
+            sessionCache.invalidate(sessionToken);
             return res.status(403).json({ error: 'Session not valid for this channel', expired: true });
         }
 
@@ -78,7 +60,7 @@ module.exports = function(db, pipeConverter) {
         // Periodically re-validate session for this long-lived connection.
         // If the session expires mid-stream, terminate the connection.
         let sessionCheckTimer = setInterval(() => {
-            const result = getCachedSession(db, sessionToken);
+            const result = sessionCache.get(sessionToken);
             if (!result.valid) {
                 console.log('Pipe: session expired mid-stream for channel', channel.id);
                 clearInterval(sessionCheckTimer);

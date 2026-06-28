@@ -1,52 +1,5 @@
 const { spawn } = require('child_process');
-
-const QUALITY_PRESETS = {
-    low: {
-        videoCodec: 'libx264',
-        videoBitrate: '400k',
-        videoMaxRate: '500k',
-        videoBufSize: '800k',
-        videoPreset: 'ultrafast',
-        videoTune: 'zerolatency',
-        videoProfile: 'baseline',
-        videoLevel: '3.0',
-        videoResolution: '640x360',
-        audioBitrate: '48k',
-        audioChannels: '1',
-        audioRate: '44100',
-        copyVideo: false
-    },
-    medium: {
-        videoCodec: 'libx264',
-        videoBitrate: '1000k',
-        videoMaxRate: '1200k',
-        videoBufSize: '2000k',
-        videoPreset: 'veryfast',
-        videoTune: 'zerolatency',
-        videoProfile: 'main',
-        videoLevel: '3.1',
-        videoResolution: null,
-        audioBitrate: '64k',
-        audioChannels: '2',
-        audioRate: '48000',
-        copyVideo: false
-    },
-    high: {
-        videoCodec: 'copy',
-        videoBitrate: null,
-        videoMaxRate: null,
-        videoBufSize: null,
-        videoPreset: null,
-        videoTune: null,
-        videoProfile: null,
-        videoLevel: null,
-        videoResolution: null,
-        audioBitrate: '128k',
-        audioChannels: '2',
-        audioRate: '48000',
-        copyVideo: true
-    }
-};
+const { QUALITY_PRESETS, resolvePreset, applyOverrides } = require('./qualityPresets');
 
 class PipeConverter {
     constructor(options = {}) {
@@ -105,39 +58,7 @@ class PipeConverter {
     }
 
     _resolvePreset(qualityLabel, qualityConfig) {
-        const baseKey = (qualityConfig && qualityConfig.preset_key) || qualityLabel.toLowerCase().trim();
-        if (this.qualityPresets[baseKey]) {
-            return this._applyOverrides(this.qualityPresets[baseKey], qualityConfig);
-        }
-        for (const key of Object.keys(this.qualityPresets)) {
-            if (baseKey.includes(key)) {
-                return this._applyOverrides(this.qualityPresets[key], qualityConfig);
-            }
-        }
-        const resMatch = baseKey.match(/(\d+)p/);
-        if (resMatch) {
-            const h = parseInt(resMatch[1]);
-            if (h <= 360) return this._applyOverrides(this.qualityPresets.low, qualityConfig);
-            if (h <= 720) return this._applyOverrides(this.qualityPresets.medium, qualityConfig);
-        }
-        return this._applyOverrides(this.qualityPresets.high, qualityConfig);
-    }
-
-    _applyOverrides(base, cfg) {
-        if (!cfg) return base;
-        const r = Object.assign({}, base);
-        if (cfg.video_codec != null) { r.videoCodec = cfg.video_codec; r.copyVideo = cfg.video_codec === 'copy'; }
-        if (cfg.video_bitrate != null) r.videoBitrate = cfg.video_bitrate;
-        if (cfg.video_maxrate != null) r.videoMaxRate = cfg.video_maxrate;
-        if (cfg.video_bufsize != null) r.videoBufSize = cfg.video_bufsize;
-        if (cfg.video_preset != null) r.videoPreset = cfg.video_preset;
-        if (cfg.video_profile != null) r.videoProfile = cfg.video_profile;
-        if (cfg.video_level != null) r.videoLevel = cfg.video_level;
-        if (cfg.video_resolution != null) r.videoResolution = cfg.video_resolution;
-        if (cfg.audio_bitrate != null) r.audioBitrate = cfg.audio_bitrate;
-        if (cfg.audio_channels != null) r.audioChannels = String(cfg.audio_channels);
-        if (cfg.audio_rate != null) r.audioRate = String(cfg.audio_rate);
-        return r;
+        return resolvePreset(qualityLabel, qualityConfig, this.qualityPresets);
     }
 
     ensureStream(channelId, qualityLabel, streamUrl, qualityConfig) {
@@ -208,6 +129,7 @@ class PipeConverter {
             'X-Accel-Buffering': 'no',
             'X-Stream-Type': 'pipe'
         });
+        if (res.socket) res.socket.setNoDelay(true);
 
         // Send rolling buffer so new client gets initial data immediately.
         // This contains recent MPEG-TS packets including PAT/PMT headers

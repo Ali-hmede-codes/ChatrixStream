@@ -1,41 +1,10 @@
 const express = require('express');
-const fs = require('fs');
-const crypto = require('crypto');
-const { validateSession } = require('../services/codeGenerator');
-
-const SESSION_CACHE_TTL = 30000;
-const sessionCache = new Map();
-
-function getCachedSession(db, sessionToken) {
-    const now = Date.now();
-    const cached = sessionCache.get(sessionToken);
-    if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
-        return cached.result;
-    }
-    const result = validateSession(db, sessionToken);
-    sessionCache.set(sessionToken, { result, timestamp: now });
-    // Evict stale entries when cache grows too large
-    if (sessionCache.size > 500) {
-        for (const [key, val] of sessionCache) {
-            if (now - val.timestamp > SESSION_CACHE_TTL) {
-                sessionCache.delete(key);
-            }
-        }
-        // If still too large after TTL eviction, remove oldest entries
-        if (sessionCache.size > 500) {
-            const entries = Array.from(sessionCache.entries());
-            entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-            const toRemove = entries.slice(0, entries.length - 400);
-            for (const [key] of toRemove) {
-                sessionCache.delete(key);
-            }
-        }
-    }
-    return result;
-}
+const SessionCache = require('../services/sessionCache');
 
 module.exports = function(db, hlsConverter) {
     const router = express.Router();
+
+    const sessionCache = new SessionCache(db, 30000, 500);
 
     const channelCache = new Map();
     const CHANNEL_CACHE_TTL = 60000;
@@ -106,14 +75,14 @@ module.exports = function(db, hlsConverter) {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return { valid: false, error: 'No session token' };
 
-        const session = getCachedSession(db, sessionToken);
+        const session = sessionCache.get(sessionToken);
         if (!session.valid) return { valid: false, error: session.error };
 
         const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return { valid: false, error: 'Channel not found' };
 
         if (session.channel_id !== channel.id) {
-            sessionCache.delete(sessionToken);
+            sessionCache.invalidate(sessionToken);
             return { valid: false, error: 'Session not valid for this channel' };
         }
 
@@ -132,14 +101,14 @@ module.exports = function(db, hlsConverter) {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return res.status(403).json({ error: 'No session token', expired: true });
 
-        const session = getCachedSession(db, sessionToken);
+        const session = sessionCache.get(sessionToken);
         if (!session.valid) return res.status(403).json({ error: session.error, expired: true });
 
         const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
         if (session.channel_id !== channel.id) {
-            sessionCache.delete(sessionToken);
+            sessionCache.invalidate(sessionToken);
             return res.status(403).json({ error: 'Session not valid for this channel', expired: true });
         }
 
@@ -176,18 +145,18 @@ module.exports = function(db, hlsConverter) {
         res.json({ warming: false, qualities: [] });
     });
 
-    router.get('/:channelToken/manifest-ready/:quality', (req, res) => {
+    router.get('/:channelToken/manifest-ready/:quality', async (req, res) => {
         const sessionToken = req.headers['x-session-token'] || req.query.session;
         if (!sessionToken) return res.status(403).json({ ready: false, expired: true });
 
-        const session = getCachedSession(db, sessionToken);
+        const session = sessionCache.get(sessionToken);
         if (!session.valid) return res.status(403).json({ ready: false, expired: true, error: session.error });
 
         const channel = getCachedChannel(req.params.channelToken);
         if (!channel) return res.status(404).json({ ready: false });
 
         if (session.channel_id !== channel.id) {
-            sessionCache.delete(sessionToken);
+            sessionCache.invalidate(sessionToken);
             return res.status(403).json({ ready: false, expired: true });
         }
 
@@ -205,7 +174,7 @@ module.exports = function(db, hlsConverter) {
         }
 
         const minSegments = parseInt(req.query.minSegments, 10) || 3;
-        const ready = hlsConverter.isManifestReady(channel.id, quality.quality_label, minSegments);
+        const ready = await hlsConverter.isManifestReady(channel.id, quality.quality_label, minSegments);
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0, private');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
@@ -286,7 +255,7 @@ module.exports = function(db, hlsConverter) {
         const segmentName = req.params.segmentName;
 
         // Try to get segment data from in-memory cache first, then disk
-        let segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
+        let segmentData = await hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
 
         // If segment not found, wait and retry up to 4 times (2 seconds total).
         // Handles the race between the manifest listing a new segment
@@ -294,7 +263,7 @@ module.exports = function(db, hlsConverter) {
         if (!segmentData) {
             for (let retry = 0; retry < 4; retry++) {
                 await new Promise(resolve => setTimeout(resolve, 500));
-                segmentData = hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
+                segmentData = await hlsConverter.getSegmentData(channelId, qualityLabel, segmentName);
                 if (segmentData) break;
             }
         }
@@ -304,8 +273,8 @@ module.exports = function(db, hlsConverter) {
             return res.status(404).end();
         }
 
-        // Generate ETag from segment content hash for HTTP caching
-        const etag = '"' + crypto.createHash('md5').update(segmentData.data).digest('hex') + '"';
+        // ETag is pre-computed and cached with the segment (no per-request MD5 hash)
+        const etag = segmentData.etag;
 
         // Check If-None-Match for conditional requests
         if (req.headers['if-none-match'] === etag) {

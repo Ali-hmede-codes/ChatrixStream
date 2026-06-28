@@ -1,7 +1,12 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'chatrix_jwt_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET environment variable is required. Set a strong random value in .env.');
+    process.exit(1);
+}
 const JWT_EXPIRES_IN = '24h';
 
 function hashPassword(password) {
@@ -34,12 +39,10 @@ function seedAdminUsers(db) {
 
     const insert = db.prepare('INSERT INTO admin_users (username, password, role) VALUES (?, ?, ?)');
 
+    const superadminPassword = process.env.ADMIN_SUPERADMIN_PASSWORD || crypto.randomBytes(12).toString('base64url');
+
     const admins = [
-        { username: 'superadmin', password: 'SuperAdmin@2026', role: 'superadmin' },
-        { username: 'admin1', password: 'AdminOne@2026', role: 'admin' },
-        { username: 'admin2', password: 'AdminTwo@2026', role: 'admin' },
-        { username: 'admin3', password: 'AdminThree@2026', role: 'admin' },
-        { username: 'moderator', password: 'Moderator@2026', role: 'moderator' }
+        { username: 'superadmin', password: superadminPassword, role: 'superadmin' }
     ];
 
     const transaction = db.transaction(() => {
@@ -49,7 +52,17 @@ function seedAdminUsers(db) {
     });
 
     transaction();
-    console.log('Seeded 5 admin users: superadmin, admin1, admin2, admin3, moderator');
+    if (process.env.ADMIN_SUPERADMIN_PASSWORD) {
+        console.log('Seeded 1 admin user (superadmin) with password from ADMIN_SUPERADMIN_PASSWORD env var.');
+    } else {
+        console.log('========================================================');
+        console.log('Seeded 1 admin user with a randomly generated password:');
+        console.log('  username: superadmin');
+        console.log('  password: ' + superadminPassword);
+        console.log('Change this immediately after first login.');
+        console.log('Set ADMIN_SUPERADMIN_PASSWORD in .env to control this.');
+        console.log('========================================================');
+    }
 }
 
 module.exports = { hashPassword, verifyPassword, generateToken, verifyToken, seedAdminUsers };

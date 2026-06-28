@@ -1,5 +1,10 @@
 const { PassThrough } = require('stream');
+const http = require('http');
+const https = require('https');
 const { http: followHttp, https: followHttps } = require('follow-redirects');
+
+const keepAliveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 
 class StreamManager {
     constructor(options = {}) {
@@ -37,10 +42,9 @@ class StreamManager {
                 'User-Agent': 'VLC/3.0.21 Vetinari',
                 'Accept': '*/*',
                 'Accept-Encoding': 'identity',
-                'Icy-MetaData': '1',
                 'Connection': 'keep-alive'
             },
-            agent: false
+            agent: parsedUrl.protocol === 'https:' ? keepAliveHttpsAgent : keepAliveHttpAgent
         };
 
         if (parsedUrl.username && parsedUrl.password) {
@@ -51,13 +55,6 @@ class StreamManager {
         let isIntentionalAbort = false;
 
         const req = requester.get(state.streamUrl, requestOptions, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400) {
-                console.log(`Stream redirect: ${res.statusCode} -> ${res.headers.location}`);
-                res.resume();
-                this._scheduleReconnect(key);
-                return;
-            }
-
             if (res.statusCode !== 200) {
                 console.error(`Stream source returned status ${res.statusCode} for ${state.streamUrl}`);
                 res.resume();
@@ -177,6 +174,7 @@ class StreamManager {
             'Access-Control-Allow-Origin': '*',
             'X-Accel-Buffering': 'no'
         });
+        if (res.socket) res.socket.setNoDelay(true);
 
         state.clients.add(res);
 
@@ -227,15 +225,24 @@ class StreamManager {
 
     stopAllStreamsForChannel(channelId) {
         // Collect keys first to avoid modifying Map during iteration
+        const targetId = String(channelId);
         const keysToStop = [];
-        for (const key of this.activeStreams.keys()) {
-            if (key.startsWith(`${channelId}:`)) {
+        for (const [key, state] of this.activeStreams) {
+            if (String(state.channelId) === targetId) {
                 keysToStop.push(key);
             }
         }
         for (const key of keysToStop) {
-            const qualityLabel = key.split(':')[1];
-            this.stopStream(channelId, qualityLabel);
+            const state = this.activeStreams.get(key);
+            if (state) this.stopStream(state.channelId, state.qualityLabel);
+        }
+    }
+
+    stopAll() {
+        const keysToStop = Array.from(this.activeStreams.keys());
+        for (const key of keysToStop) {
+            const state = this.activeStreams.get(key);
+            if (state) this.stopStream(state.channelId, state.qualityLabel);
         }
     }
 }

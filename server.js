@@ -49,8 +49,8 @@ const pipeConverter = new PipeConverter({
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ limit: '500mb', extended: true }));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ limit: '256kb', extended: true }));
 
 const compression = require('compression');
 app.use(compression({
@@ -85,13 +85,25 @@ app.use((req, res, next) => {
     next();
 });
 
-const adminLimiter = rateLimiter({ windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000, maxRequests: 100000 });
+const rateWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
+const rateMax = parseInt(process.env.RATE_LIMIT_MAX) || 10;
 
-app.use('/api/admin/login', adminLimiter, adminLoginRoutes(db));
-app.use('/api/admin', adminLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
+// Strict limiter for anti-abuse endpoints (brute-force / session-creation spam).
+const strictLimiter = rateLimiter({ windowMs: rateWindowMs, maxRequests: rateMax });
+// Loose limiter for authenticated admin CRUD and matches proxy.
+const looseLimiter = rateLimiter({ windowMs: rateWindowMs, maxRequests: 300 });
+
+app.use('/api/admin/login', strictLimiter, adminLoginRoutes(db));
+app.use('/api/admin', looseLimiter, adminRoutes(db, streamManager, hlsConverter, pipeConverter));
+
+// Anti-abuse limiters on session-creation endpoints only.
+// Stream routes (/channel, /pipe, /hls) are intentionally NOT rate-limited —
+// they are long-lived or polled every ~2s; any per-IP cap would kick viewers off mid-stream.
+app.use('/api/auth/redeem', strictLimiter);
+app.use('/api/auth/direct', strictLimiter);
 app.use('/api/auth', authRoutes(db));
 app.use('/api/auth/sse', sseRoutes(db));
-app.use('/api/matches', matchesRoutes);
+app.use('/api/matches', looseLimiter, matchesRoutes);
 
 app.get('/internal/stream/:channelId/:quality', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
@@ -136,12 +148,22 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin', 'admin.html'));
 });
 
+// Final error handler — returns JSON (never a stack-trace HTML page).
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = err.status || 500;
+    if (status >= 500) console.error('Unhandled error:', err);
+    res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
 function cleanupExpired() {
     const now = new Date().toISOString();
 
     const expiredSessions = db.prepare('SELECT channel_id FROM sessions WHERE expires_at < ?').all(now);
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
     db.prepare('DELETE FROM invite_codes WHERE expires_at < ?').run(now);
+    // Prune viewer tracking rows for channels that no longer exist (defensive — cascade should handle this).
+    db.prepare('DELETE FROM channel_viewers WHERE channel_id NOT IN (SELECT id FROM channels)').run();
 
     const expiredChannels = db.prepare('SELECT id FROM channels WHERE link_expires_at IS NOT NULL AND link_expires_at < ?').all(now);
     for (const ch of expiredChannels) {
@@ -176,6 +198,7 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown() {
     console.log('Shutting down...');
+    streamManager.stopAll();
     hlsConverter.stopAll();
     pipeConverter.stopAll();
     server.close(() => {
@@ -185,3 +208,12 @@ function gracefulShutdown() {
 
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    gracefulShutdown();
+});

@@ -1,8 +1,8 @@
 # ChatrixStream — Backend Documentation & Review
 
-> Status: **Review only (no code changes yet).** This file documents the current
-> backend architecture and lists the bugs, security issues, and performance
-> problems found during the review, prioritized for fixing.
+> Status: **All issues in §10 have been fixed.** This file documents the
+> backend architecture and the bugs, security issues, and performance problems
+> that were found during the review and have since been resolved.
 >
 > Scope: backend only (`server.js`, `routes/`, `services/`, `middleware/`, `db/`).
 > Frontend (`public/`) is intentionally out of scope for this pass.
@@ -58,12 +58,13 @@ services/
   streamManager.js         # Raw MPEG‑TS passthrough fan‑out (1 upstream → N clients)
   pipeConverter.js         # FFmpeg stdout → MPEG‑TS fan‑out (+ rolling buffer)
   hlsConverter.js          # FFmpeg → HLS segments on disk (+ in‑memory caches)
+  qualityPresets.js        # Shared encoding presets + display bitrate info (single source)
+  sessionCache.js           # Shared per‑token session validation cache (TTL + LRU eviction)
   codeGenerator.js         # Tokens, invite codes, session create/validate/redeem
-  adminUser.js             # bcrypt + JWT, seeds default admin users
+  adminUser.js             # bcrypt + JWT, seeds default admin user
 middleware/
   adminAuth.js             # Bearer JWT verification + superAdminOnly gate
-  sessionAuth.js           # x-session-token verification (currently unused by routes)
-  rateLimiter.js           # Simple per‑IP sliding window
+  rateLimiter.js           # Per‑IP sliding window with periodic sweep + LRU cap
 routes/
   admin.js                 # Admin CRUD: channels, qualities, codes, sessions, users
   adminLogin.js            # POST /api/admin/login → JWT
@@ -217,8 +218,8 @@ limits) you may want later.
 | `DEFAULT_CODE_TTL_HOURS` | 6 | routes/admin.js | only via env, not body |
 | `DEFAULT_LINK_EXPIRY_HOURS` | 24 | (unused in code) | **dead** |
 | `MAX_CODES_PER_GENERATION` | 100 | routes/admin.js | |
-| `RATE_LIMIT_WINDOW_MS` | 60000 | server.js (admin limiter) | |
-| `RATE_LIMIT_MAX` | 10 | **not used** | dead — limiter hard‑coded to 100000 (see B‑3); when wired, applies to auth/admin endpoints only, **not** stream routes |
+| `RATE_LIMIT_WINDOW_MS` | 60000 | server.js (all limiters) | |
+| `RATE_LIMIT_MAX` | 10 | server.js (strict limiter) | ✅ now used — applies to `/api/admin/login`, `/api/auth/redeem`, `/api/auth/direct` only |
 | `FFMPEG_PATH` | `ffmpeg` | converters | falls back to `ffmpeg-static` |
 | `HLS_TEMP_DIR` | `tmp/hls` | hlsConverter | .env sets `/dev/shm/...` |
 | `HLS_SEGMENT_DURATION` | 2 | hlsConverter | |
@@ -227,8 +228,8 @@ limits) you may want later.
 | `HLS_*` (rest) | see code | hlsConverter | |
 | `STREAM_HIGH_WATER_MARK` | 2MB | streamManager | .env sets 8MB |
 | `STREAM_*` (rest) | see code | streamManager | |
-| `ADMIN_SECRET` | weak | **not used** | dead — code uses JWT (see B‑1) |
-| `JWT_SECRET` | — | adminUser.js | **missing from .env** → hardcoded fallback (S‑1) |
+| `JWT_SECRET` | — | adminUser.js | ✅ **required** — server exits if missing; set in `.env` |
+| `ADMIN_SUPERADMIN_PASSWORD` | — | adminUser.js | ✅ optional — initial superadmin password; if unset, random + logged once |
 | `CORS_ORIGINS` | `stream.chatrix.vip,localhost:3000` | server.js | |
 
 ---
@@ -288,185 +289,132 @@ Notable gaps:
 
 ---
 
-## 10. REVIEW: Bugs & Issues Found
+## 10. REVIEW: Bugs & Issues Found (all resolved)
 
 Priority legend: **S** = security, **B** = correctness bug, **P** = performance,
-**M** = maintenance/quality. Each item has a file:line reference.
+**M** = maintenance/quality. Each item has a file:line reference and a ✅ fix note.
 
 ### Critical
 
-#### S‑1 — Hardcoded JWT secret fallback (`services/adminUser.js:4`)
-```js
-const JWT_SECRET = process.env.JWT_SECRET || 'chatrix_jwt_secret_key_2026';
-```
-`JWT_SECRET` is **not** in `.env`, so the fallback is used in production. Anyone
-who reads this source can forge a valid admin JWT and fully take over the
-platform. **Fix:** require `JWT_SECRET` at startup (fail fast if missing) and add
-a strong value to `.env`.
+#### S‑1 — Hardcoded JWT secret fallback (`services/adminUser.js`) — ✅ FIXED
+The server now **fails fast at startup** if `JWT_SECRET` is missing (no fallback).
+`JWT_SECRET` is set in `.env`. Anyone reading the source can no longer forge admin
+JWTs.
 
-#### S‑2 — Default admin credentials seeded in source (`services/adminUser.js:37-43`)
-Hardcoded usernames/passwords (`superadmin` / `SuperAdmin@2026`, etc.) are
-inserted on first run. Anyone with source access knows the live admin login.
-**Fix:** seed from env vars or require interactive setup; at minimum force a
-password change on first login.
+#### S‑2 — Default admin credentials seeded in source (`services/adminUser.js`) — ✅ FIXED
+Only `superadmin` is seeded on first run. The password comes from
+`ADMIN_SUPERADMIN_PASSWORD` env var; if unset, a random password is generated and
+logged once to the console. Other admin users are created via the admin UI.
 
-#### S‑3 — 500MB JSON body limit (`server.js:52-53`)
-```js
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ limit: '500mb', extended: true }));
-```
-Trivial DoS: an attacker can POST a 500MB JSON body to OOM the process. Admin
-endpoints only need a few KB. **Fix:** set a small global limit (e.g. `64kb`),
-raise only where needed.
+#### S‑3 — 500MB JSON body limit (`server.js`) — ✅ FIXED
+Reduced to `256kb` globally. Admin/viewer endpoints only need a few KB.
 
-#### B‑1 — No Express error‑handling middleware (`server.js`)
-There is no `app.use((err, req, res, next) => …)`. The CORS check does
-`callback(new Error('Not allowed by CORS'))` (server.js:75); an unhandled error
-here returns Express's default HTML error page **with stack trace** instead of
-JSON, leaking internals and breaking API clients. **Fix:** add a final error
-handler that returns JSON `{ error }` and never sends the stack in production.
+#### B‑1 — No Express error‑handling middleware (`server.js`) — ✅ FIXED
+A final JSON error handler (`app.use((err, req, res, next) => …)`) returns
+`{ error }` and logs 5xx errors. Stack traces are never sent to clients.
 
-#### B‑2 — No `unhandledRejection` / `uncaughtException` handlers (`server.js`)
-A single unhandled promise rejection (e.g. from `routes/matches.js` if `fetch`
-throws outside the try/catch, or any future async route) can crash or destabilise
-the process. **Fix:** add `process.on('unhandledRejection', …)` and
-`process.on('uncaughtException', …)` logging + graceful exit.
+#### B‑2 — No `unhandledRejection` / `uncaughtException` handlers (`server.js`) — ✅ FIXED
+Both handlers are registered. Rejections are logged; uncaught exceptions trigger a
+graceful shutdown.
 
 ### High
 
-#### B‑3 — Rate limiting is misconfigured (`server.js:88`)
-```js
-const adminLimiter = rateLimiter({ windowMs: …, maxRequests: 100000 });
-```
-`maxRequests` is hard‑coded to `100000`/min, so the `/api/admin/login` limiter is effectively a no-op. The documented `RATE_LIMIT_MAX=10` is never read. At the same time the PROJECT_PLAN suggests `GET /channel/*: 5 req/min` — **that would break live streaming** and must NOT be applied (see note below).
+#### B‑3 — Rate limiting is misconfigured (`server.js`) — ✅ FIXED
+`RATE_LIMIT_MAX` is now wired. A **strict** limiter (`RATE_LIMIT_MAX`, default 10)
+covers `/api/admin/login`, `/api/auth/redeem`, `/api/auth/direct`. A **loose**
+limiter (300/min) covers `/api/admin/*` CRUD and `/api/matches`. **Stream routes
+are never rate‑limited** — they are long‑lived or polled every ~2s.
 
-**Fix (carefully — keep streams unlimited):**
-- Wire `RATE_LIMIT_MAX` so it is actually used.
-- Tighten the limiter on **anti‑abuse endpoints only**: `/api/auth/redeem` (invite‑code brute‑force), `/api/auth/direct/:token` (session‑creation spam), `/api/admin/login` (already wired, fix the cap). A separate, looser limiter can cover `/matches/:date`.
-- **Do NOT rate‑limit any stream/manifest/segment route.** These endpoints are long‑lived (`/channel`, `/pipe`) or polled every ~2s (`/hls/.../index.m3u8`, `.../:segment`, `/hls/.../manifest-ready/:quality`). Any per‑IP request cap trips instantly and kicks viewers off mid‑stream.
-- Viewer access control is already handled by session validation on every request + the 30s mid‑stream re‑validation in `stream.js`/`pipe.js`; that is the right place to enforce limits, not a request counter.
+#### B‑4 — Rate limiter `hits` Map grows unbounded (`middleware/rateLimiter.js`) — ✅ FIXED
+Periodic sweep (every `windowMs`) evicts stale IPs; hard cap (`maxIps`, default
+10000) with oldest‑entry eviction prevents unbounded growth.
 
-**Why streams must stay unlimited:**
-```
-HLS viewer every 2s:
-  GET .../index.m3u8        ← manifest poll
-  GET .../seq_42.ts         ← segment fetch
-  GET .../seq_43.ts         ← segment fetch
-A 5 req/min limiter would block the viewer after ~6 seconds. ❌
-Raw/pipe viewer:
-  1 long-lived GET that stays open for the whole session. ❌ can't count as "1 req/min"
-```
+#### B‑5 — `pipe.js` session cache lacks oldest‑entry eviction (`routes/pipe.js`) — ✅ FIXED
+`pipe.js`, `hls.js`, and `auth.js` now all use the shared `SessionCache` helper
+(`services/sessionCache.js`) which has both TTL and size‑based oldest eviction.
 
-#### B‑4 — Rate limiter `hits` Map grows unbounded (`middleware/rateLimiter.js`)
-Old IPs that never return are never evicted → slow memory leak. **Fix:** periodic
-sweep or LRU cap.
+#### P‑1 — Synchronous file I/O on HLS hot path (`services/hlsConverter.js`) — ✅ FIXED
+`getManifest`, `getSegmentData`, and `isManifestReady` are now **async** using
+`fs.promises`. The segment LRU cache was expanded from 20 to 40 entries
+(configurable via `segmentCacheSize` option).
 
-#### B‑5 — `pipe.js` session cache lacks oldest‑entry eviction (`routes/pipe.js:16-23`)
-Unlike `hls.js` (which has a size‑based oldest eviction fallback at lines 24-32),
-`pipe.js` only evicts by TTL. Under a burst of fresh tokens the Map can grow
-unbounded. **Fix:** mirror the `hls.js` eviction logic.
+#### P‑2 — MD5 ETag recomputed on every segment request (`routes/hls.js`) — ✅ FIXED
+The ETag is now computed **once** when a segment is first read from disk and cached
+alongside the segment data in the `SegmentLRU`. Per‑request MD5 hashing is
+eliminated.
 
-#### P‑1 — Synchronous file I/O on HLS hot path (`services/hlsConverter.js`, `routes/hls.js`)
-- `getManifest` uses `fs.existsSync` + `fs.readFileSync` (hlsConverter.js:544-549)
-  on every manifest request (cached only 500ms).
-- `getSegmentData` uses `fs.readFileSync` (hlsConverter.js:721) on cache miss.
-With 79+ viewers polling manifest/segments every ~2s, sync reads **block the
-event loop** and stall all clients (including raw passthrough ones). **Fix:**
-switch to `fs.promises` (async) or a `worker_threads` offload; expand the
-in‑memory segment cache.
-
-#### P‑2 — MD5 ETag recomputed on every segment request (`routes/hls.js:308`)
-```js
-const etag = '"' + crypto.createHash('md5').update(segmentData.data).digest('hex') + '"';
-```
-Even with the in‑memory segment cache, the ETag is recomputed per request. 79
-viewers × 1 segment/2s = ~40 MD5 hashes/s of ~1MB buffers. **Fix:** cache the
-ETag alongside the segment in `SegmentLRU` (keyed by segment name) or derive it
-from `name + size` instead of full content.
-
-#### B‑6 — `gracefulShutdown` does not stop `StreamManager` (`server.js:177-184`)
-Only `hlsConverter` and `pipeConverter` are stopped; raw passthrough streams
-(`/channel`) are left dangling. They die on process exit anyway, but clients get
-a hard reset instead of a clean end. **Fix:** call `streamManager.stopAll()`.
+#### B‑6 — `gracefulShutdown` does not stop `StreamManager` (`server.js`) — ✅ FIXED
+`streamManager.stopAll()` is now called alongside `hlsConverter.stopAll()` and
+`pipeConverter.stopAll()`. (`StreamManager.stopAll()` was added.)
 
 ### Medium
 
-#### B‑7 — Dead redirect branch in `StreamManager` (`services/streamManager.js:54-58`)
-`follow-redirects` follows redirects automatically, so the manual 3xx handling
-that calls `_scheduleReconnect` is effectively dead — and if it ever fires
-(max redirects exceeded), it reconnects to the **same** URL and likely loops.
-**Fix:** remove the branch or treat max‑redirects as a hard failure.
+#### B‑7 — Dead redirect branch in `StreamManager` (`services/streamManager.js`) — ✅ FIXED
+The dead 3xx branch was removed. `follow-redirects` follows redirects
+automatically; any non‑200 is treated as an error and triggers reconnect.
 
-#### P‑3 — No TCP `noDelay` on stream responses
-PROJECT_PLAN states `noDelay: true`, but `addClient`/`addClient` in
-`streamManager.js:172` and `pipeConverter.js:201` never call
-`res.socket.setNoDelay(true)`. Nagle's algorithm adds up to ~200ms latency on
-small chunks. **Fix:** set `setNoDelay(true)` after `writeHead`.
+#### P‑3 — No TCP `noDelay` on stream responses — ✅ FIXED
+`res.socket.setNoDelay(true)` is called after `writeHead` in both
+`streamManager.js` and `pipeConverter.js`, reducing latency by disabling Nagle's
+algorithm.
 
-#### B‑8 — `Accept-Encoding: identity` + `Icy-MetaData: 1` may not match sources
-`streamManager.js:39-40` requests icecast metadata but does not parse it; for
-non‑icecast sources this is harmless but inconsistent. Low impact.
+#### B‑8 — `Accept-Encoding: identity` + `Icy-MetaData: 1` may not match sources — ✅ FIXED
+The unused `Icy-MetaData: 1` header was removed (metadata was never parsed).
+`Accept-Encoding: identity` is kept (correct for raw byte streams).
 
-#### B‑9 — `cleanupExpired` does not prune `channel_viewers` (`server.js:139-168`)
-Viewer rows accumulate forever; `viewers_count` grows unbounded and the table
-bloats. **Fix:** delete viewers whose channel was deleted (cascade already
-handles this) and/or periodically prune stale viewer_id entries.
+#### B‑9 — `cleanupExpired` does not prune `channel_viewers` (`server.js`) — ✅ FIXED
+`cleanupExpired` now deletes `channel_viewers` rows for channels that no longer
+exist.
 
-#### B‑10 — `routes/matches.js` fetch has no timeout/cache (`routes/matches.js:13`)
-Global `fetch` with no `AbortController`/timeout can hang a request handler; every
-call hits the external API. **Fix:** add timeout + short‑lived response cache.
+#### B‑10 — `routes/matches.js` fetch has no timeout/cache (`routes/matches.js`) — ✅ FIXED
+Added an 8s `AbortController` timeout and a 60s response cache.
 
-#### M‑1 — Three duplicated session caches with different TTLs
-`routes/auth.js` (15s), `routes/hls.js` (30s), `routes/pipe.js` (30s) each
-reimplement `getCachedSession` with subtly different eviction. **Fix:** extract
-one shared cache helper in `services/`.
+#### M‑1 — Three duplicated session caches with different TTLs — ✅ FIXED
+All three now use the shared `SessionCache` class (`services/sessionCache.js`)
+with configurable TTL and max size + oldest‑entry eviction.
 
-#### M‑2 — Duplicated quality presets
-`QUALITY_PRESETS` is copy‑pasted across `hlsConverter.js` and `pipeConverter.js`
-(and again, differently, in `routes/auth.js`). Drift risk. **Fix:** single source
-in `services/`.
+#### M‑2 — Duplicated quality presets — ✅ FIXED
+Encoding presets live in a single module (`services/qualityPresets.js`), imported
+by `hlsConverter.js` and `pipeConverter.js`. Display/bitrate‑info logic
+(`deriveBitrateInfo`) is also shared and used by `routes/auth.js`.
 
-#### M‑3 — `sessionAuth.js` middleware is unused
-No route imports it; session checks are inlined per route. Either wire it in or
-remove it to reduce confusion.
+#### M‑3 — `sessionAuth.js` middleware is unused — ✅ FIXED
+Removed. Session validation is inlined per route (now via `SessionCache`).
 
-#### M‑4 — Dead/contradictory config
-`ADMIN_SECRET`, `DEFAULT_LINK_EXPIRY_HOURS`, `RATE_LIMIT_MAX` are referenced by
-docs/`.env` but not by code. PROJECT_PLAN still describes `X-Admin-Secret` auth
-while the code uses Bearer JWT. **Fix:** sync docs and `.env` with reality.
+#### M‑4 — Dead/contradictory config — ✅ FIXED
+`ADMIN_SECRET` and `DEFAULT_LINK_EXPIRY_HOURS` removed from `.env`.
+`RATE_LIMIT_MAX` is now actually used. Added `ADMIN_SUPERADMIN_PASSWORD` (optional).
 
 ### Low
 
-#### B‑11 — `stopAllStreamsForChannel` key parsing (`services/streamManager.js:237`)
-`key.split(':')[1]` would break if a quality label ever contained `:`. Unlikely
-today, but fragile. **Fix:** store `(channelId, qualityLabel)` tuples instead
-of re‑parsing the string key.
+#### B‑11 — `stopAllStreamsForChannel` key parsing (`services/streamManager.js`) — ✅ FIXED
+Now iterates `state.channelId` (type‑safe `String()` comparison) instead of
+re‑parsing the key string with `split(':')`.
 
-#### B‑12 — `localize_admin.js` at repo root
-Unreviewed top‑level script not referenced by the server. Confirm whether it is
-needed; if not, remove to reduce surface area.
+#### B‑12 — `localize_admin.js` at repo root — ✅ CONFIRMED NEEDED
+This is a standalone dev build script that injects localization into the admin
+frontend JS. It is not imported by the server. Kept as a useful utility.
 
-#### P‑4 — `agent: false` on upstream (`services/streamManager.js:43`)
-Disables keep‑alive connection pooling for upstream reconnects. Fine for single
-streams; minor overhead on rapid reconnect loops.
+#### P‑4 — `agent: false` on upstream (`services/streamManager.js`) — ✅ FIXED
+Now uses shared keep‑alive agents (`http.Agent` / `https.Agent` with
+`keepAlive: true, maxSockets: 64`) for upstream connection pooling on reconnects.
 
 ---
 
 ## 11. Performance Recommendations for 79+ Users
 
-1. **Default viewers to raw passthrough (`/channel`) or `copy`‑based pipe/HLS.**
+1. ✅ **Default viewers to raw passthrough (`/channel`) or `copy`‑based pipe/HLS.**
    These paths scale linearly with near‑zero CPU. Reserve transcoded presets for
-   users who explicitly need lower bitrate.
-2. **Fix P‑1/P‑2 first** — sync I/O and MD5 are the most likely cause of "stops"
-   and stutters under load, because they block the single event loop that also
-   serves every other viewer.
+   users who explicitly need lower bitrate. (No change needed — already the `high`
+   default preset = video `copy`.)
+2. ✅ **P‑1/P‑2 fixed** — sync I/O replaced with `fs.promises`; ETag cached with
+   segment. These were the most likely cause of "stops" and stutters under load.
 3. **Put a reverse proxy (nginx) in front** for TLS termination, static caching,
    and `proxy_buffering off` for stream endpoints (already implied by
    `X-Accel-Buffering: no`). Ensure `trust proxy` setting matches your hop count
    (currently `1`).
-4. **HLS temp dir on tmpfs** — already configured (`/dev/shm/...`). Keep it;
-   avoids disk I/O for segments. Increase `SegmentLRU` size (currently 20) to
-   cover more concurrent segment requests.
+4. ✅ **HLS temp dir on tmpfs** — already configured (`/dev/shm/...`). Segment LRU
+   expanded from 20 → 40 entries (configurable via `segmentCacheSize`).
 5. **Backpressure** — the 5MB `maxBuffer` drop is a blunt instrument. For 79+
    users consider honoring `res.write() === false` + `passthrough.pause()` to
    apply real backpressure instead of dropping clients.
@@ -477,18 +425,31 @@ streams; minor overhead on rapid reconnect loops.
 
 ---
 
-## 12. Recommended Fix Order
+## 12. Fix Status
 
-1. **S‑1, S‑2, S‑3** — secrets + body limit (security blockers).
-2. **B‑1, B‑2** — error handler + global rejection handler (stability).
-3. **B‑3, B‑4, B‑5** — fix anti‑abuse rate limiting (auth/admin login only — **never** on stream routes) + cache leaks.
-4. **P‑1, P‑2** — async HLS I/O + ETag cache (the "stops" under 79+ users).
-5. **B‑6, P‑3** — clean shutdown + `noDelay`.
-6. **B‑7, B‑9, B‑10** — correctness cleanups.
-7. **M‑1 … M‑4** — dedup + doc/config sync.
+All items below have been implemented and verified (syntax check + module load
+test on all backend files):
 
-Each item is isolated and can be applied incrementally without changing the
-public API or the database schema.
+1. ✅ **S‑1, S‑2, S‑3** — JWT secret required at startup; admin seeded from env;
+   body limit reduced to 256kb.
+2. ✅ **B‑1, B‑2** — JSON error handler + `unhandledRejection` /
+   `uncaughtException` handlers.
+3. ✅ **B‑3, B‑4, B‑5** — `RATE_LIMIT_MAX` wired; strict limiter on auth/login
+   only (never stream routes); rate limiter sweep + LRU cap; shared session cache.
+4. ✅ **P‑1, P‑2** — async HLS I/O (`fs.promises`); ETag cached with segment;
+   segment LRU expanded to 40.
+5. ✅ **B‑6, P‑3** — `streamManager.stopAll()` in graceful shutdown; TCP
+   `noDelay` on stream responses.
+6. ✅ **B‑7, B‑8, B‑9, B‑10** — dead redirect branch removed; `Icy-MetaData`
+   header removed; `channel_viewers` pruned; matches fetch timeout + cache.
+7. ✅ **M‑1 … M‑4** — shared `SessionCache` + `qualityPresets` modules;
+   `sessionAuth.js` removed; `.env` dead vars removed.
+8. ✅ **B‑11, B‑12, P‑4** — type‑safe channel stop; `localize_admin.js` confirmed
+   needed; keep‑alive agents for upstream.
+
+No public API or database schema was changed. The only behavioral note: on a
+**fresh** database, only `superadmin` is seeded (was previously 5 users); create
+additional admins via the admin UI. Existing databases are unaffected.
 
 ---
 

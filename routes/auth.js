@@ -1,59 +1,12 @@
 const express = require('express');
-const { redeemInviteCode, validateSession, createSessionForChannel } = require('../services/codeGenerator');
-
-const QUALITY_PRESETS = {
-    low: { approxBitrate: '~500kbps', description: 'Low (200KB/s WiFi)', videoBitrate: '400k', videoResolution: '640x360', audioBitrate: '48k' },
-    medium: { approxBitrate: '~1200kbps', description: 'Medium (1MB/s WiFi)', videoBitrate: '1000k', videoResolution: null, audioBitrate: '64k' },
-    high: { approxBitrate: 'source', description: 'High (unlimited)', videoBitrate: null, videoResolution: null, audioBitrate: '128k' },
-    copy: { approxBitrate: 'source', description: 'Source (no transcoding)', videoBitrate: null, videoResolution: null, audioBitrate: '128k' }
-};
-
-function resolvePresetInfo(qualityLabel) {
-    if (!qualityLabel) return QUALITY_PRESETS.high;
-    const lower = qualityLabel.toLowerCase().trim();
-    if (QUALITY_PRESETS[lower]) return QUALITY_PRESETS[lower];
-    for (const key of Object.keys(QUALITY_PRESETS)) {
-        if (lower.includes(key)) return QUALITY_PRESETS[key];
-    }
-    const resolutionMatch = lower.match(/(\d+)p/);
-    if (resolutionMatch) {
-        const height = parseInt(resolutionMatch[1]);
-        if (height <= 360) return QUALITY_PRESETS.low;
-        if (height <= 720) return QUALITY_PRESETS.medium;
-    }
-    return QUALITY_PRESETS.high;
-}
-
-function deriveBitrateInfo(qualityRow) {
-    const base = resolvePresetInfo(qualityRow.label || qualityRow.quality_label);
-    const ql = qualityRow.label || qualityRow.quality_label || '';
-    const presetKey = (qualityRow.preset_key || ql).toLowerCase().trim();
-    const presetBase = QUALITY_PRESETS[presetKey] || base;
-
-    let approxBitrate = presetBase.approxBitrate;
-    let description = presetBase.description;
-
-    if (qualityRow.video_bitrate) {
-        approxBitrate = '~' + qualityRow.video_bitrate;
-    }
-    if (qualityRow.video_codec === 'copy') {
-        approxBitrate = 'source';
-        description = 'Source (no transcoding)';
-    }
-    if (qualityRow.video_resolution) {
-        description = ql.toUpperCase() + ' (' + qualityRow.video_resolution + ')';
-    } else if (qualityRow.video_codec !== 'copy' && qualityRow.video_bitrate) {
-        description = ql.toUpperCase() + ' (~' + qualityRow.video_bitrate + ')';
-    }
-
-    return { approxBitrate, description };
-}
+const { redeemInviteCode, createSessionForChannel } = require('../services/codeGenerator');
+const SessionCache = require('../services/sessionCache');
+const { deriveBitrateInfo } = require('../services/qualityPresets');
 
 module.exports = function(db) {
     const router = express.Router();
 
-    const sessionCache = new Map();
-    const SESSION_CACHE_TTL = 15000; // 15 seconds
+    const sessionCache = new SessionCache(db, 15000, 1000);
 
     const getQualitiesByChannel = db.prepare('SELECT quality_label as label, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration FROM channel_qualities WHERE channel_id = ? ORDER BY sort_order');
     const getChannelByToken = db.prepare('SELECT * FROM channels WHERE channel_token = ?');
@@ -173,23 +126,10 @@ module.exports = function(db) {
         const { session_token, viewer_id } = req.body;
         if (!session_token) return res.json({ valid: false, error: 'No session token provided' });
 
-        const now = Date.now();
-        const cached = sessionCache.get(session_token);
-        if (cached && now - cached.timestamp < SESSION_CACHE_TTL) {
-            if (viewer_id && typeof viewer_id === 'string' && cached.response.valid && cached.channel_id) {
-                try {
-                    db.prepare('INSERT OR IGNORE INTO channel_viewers (channel_id, viewer_id) VALUES (?, ?)').run(cached.channel_id, viewer_id);
-                } catch (e) {}
-            }
-            return res.json(cached.response);
-        }
-
-        const result = validateSession(db, session_token);
+        const result = sessionCache.get(session_token);
 
         if (!result.valid) {
-            const errRes = { valid: false, error: result.error };
-            sessionCache.set(session_token, { response: errRes, timestamp: now });
-            return res.json(errRes);
+            return res.json({ valid: false, error: result.error });
         }
 
         const qualities = getQualitiesByChannel.all(result.channel_id);
@@ -197,14 +137,6 @@ module.exports = function(db) {
             ...q,
             bitrate_info: deriveBitrateInfo(q)
         }));
-        
-        const successRes = {
-            valid: true,
-            channel_token: result.channel_token,
-            channel_name: result.channel_name,
-            qualities: qualitiesWithInfo,
-            expires_at: result.expires_at
-        };
 
         if (viewer_id && typeof viewer_id === 'string') {
             try {
@@ -212,18 +144,13 @@ module.exports = function(db) {
             } catch (e) {}
         }
 
-        sessionCache.set(session_token, { response: successRes, channel_id: result.channel_id, timestamp: now });
-
-        // Clean up cache occasionally
-        if (sessionCache.size > 1000) {
-            for (const [key, val] of sessionCache) {
-                if (now - val.timestamp > SESSION_CACHE_TTL) {
-                    sessionCache.delete(key);
-                }
-            }
-        }
-
-        res.json(successRes);
+        res.json({
+            valid: true,
+            channel_token: result.channel_token,
+            channel_name: result.channel_name,
+            qualities: qualitiesWithInfo,
+            expires_at: result.expires_at
+        });
     });
 
     return router;

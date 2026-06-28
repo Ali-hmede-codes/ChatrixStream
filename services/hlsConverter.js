@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { QUALITY_PRESETS, resolvePreset } = require('./qualityPresets');
 
 // Simple LRU cache for segment data (in-memory)
 class SegmentLRU {
@@ -31,57 +33,6 @@ class SegmentLRU {
     }
 }
 
-const QUALITY_PRESETS = {
-    low: {
-        videoCodec: 'libx264',
-        videoBitrate: '400k',
-        videoMaxRate: '500k',
-        videoBufSize: '800k',
-        videoPreset: 'ultrafast',
-        videoTune: 'zerolatency',
-        videoProfile: 'baseline',
-        videoLevel: '3.0',
-        videoResolution: '640x360',
-        audioBitrate: '48k',
-        audioChannels: '1',
-        audioRate: '44100',
-        segmentDuration: 2,
-        copyVideo: false
-    },
-    medium: {
-        videoCodec: 'libx264',
-        videoBitrate: '1000k',
-        videoMaxRate: '1200k',
-        videoBufSize: '2000k',
-        videoPreset: 'veryfast',
-        videoTune: 'zerolatency',
-        videoProfile: 'main',
-        videoLevel: '3.1',
-        videoResolution: null,
-        audioBitrate: '64k',
-        audioChannels: '2',
-        audioRate: '48000',
-        segmentDuration: 2,
-        copyVideo: false
-    },
-    high: {
-        videoCodec: 'copy',
-        videoBitrate: null,
-        videoMaxRate: null,
-        videoBufSize: null,
-        videoPreset: null,
-        videoTune: null,
-        videoProfile: null,
-        videoLevel: null,
-        videoResolution: null,
-        audioBitrate: '128k',
-        audioChannels: '2',
-        audioRate: '48000',
-        segmentDuration: 2,
-        copyVideo: true
-    }
-};
-
 class HlsConverter {
     constructor(options = {}) {
         this.activeConversions = new Map();
@@ -97,54 +48,13 @@ class HlsConverter {
         this.ffmpegPath = options.ffmpegPath || 'ffmpeg';
         this.ffmpegAvailable = false;
         this.qualityPresets = options.qualityPresets || QUALITY_PRESETS;
+        this.segmentCacheSize = options.segmentCacheSize || 40;
 
         this._cleanTempDir();
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true });
         }
         this._checkFfmpeg();
-    }
-
-    _resolvePreset(qualityLabel, qualityConfig) {
-        const baseKey = (qualityConfig && qualityConfig.preset_key) || qualityLabel.toLowerCase().trim();
-        if (this.qualityPresets[baseKey]) {
-            const base = this.qualityPresets[baseKey];
-            return this._applyOverrides(base, qualityConfig);
-        }
-        for (const key of Object.keys(this.qualityPresets)) {
-            if (baseKey.includes(key)) {
-                const base = this.qualityPresets[key];
-                return this._applyOverrides(base, qualityConfig);
-            }
-        }
-        const resolutionMatch = baseKey.match(/(\d+)p/);
-        if (resolutionMatch) {
-            const height = parseInt(resolutionMatch[1]);
-            if (height <= 360) return this._applyOverrides(this.qualityPresets.low, qualityConfig);
-            if (height <= 720) return this._applyOverrides(this.qualityPresets.medium, qualityConfig);
-        }
-        return this._applyOverrides(this.qualityPresets.high, qualityConfig);
-    }
-
-    _applyOverrides(basePreset, qualityConfig) {
-        if (!qualityConfig) return basePreset;
-        const result = Object.assign({}, basePreset);
-        if (qualityConfig.video_codec !== null && qualityConfig.video_codec !== undefined) {
-            result.videoCodec = qualityConfig.video_codec;
-            result.copyVideo = qualityConfig.video_codec === 'copy';
-        }
-        if (qualityConfig.video_bitrate != null) result.videoBitrate = qualityConfig.video_bitrate;
-        if (qualityConfig.video_maxrate != null) result.videoMaxRate = qualityConfig.video_maxrate;
-        if (qualityConfig.video_bufsize != null) result.videoBufSize = qualityConfig.video_bufsize;
-        if (qualityConfig.video_preset != null) result.videoPreset = qualityConfig.video_preset;
-        if (qualityConfig.video_profile != null) result.videoProfile = qualityConfig.video_profile;
-        if (qualityConfig.video_level != null) result.videoLevel = qualityConfig.video_level;
-        if (qualityConfig.video_resolution != null) result.videoResolution = qualityConfig.video_resolution;
-        if (qualityConfig.audio_bitrate != null) result.audioBitrate = qualityConfig.audio_bitrate;
-        if (qualityConfig.audio_channels != null) result.audioChannels = String(qualityConfig.audio_channels);
-        if (qualityConfig.audio_rate != null) result.audioRate = String(qualityConfig.audio_rate);
-        if (qualityConfig.segment_duration != null) result.segmentDuration = qualityConfig.segment_duration;
-        return result;
     }
 
     _cleanTempDir() {
@@ -252,7 +162,7 @@ class HlsConverter {
             // In-memory caches to avoid disk I/O per viewer
             cachedManifest: null,
             cachedManifestTime: 0,
-            segmentCache: new SegmentLRU(20)
+            segmentCache: new SegmentLRU(this.segmentCacheSize)
         };
 
         this.activeConversions.set(key, state);
@@ -278,14 +188,13 @@ class HlsConverter {
         this.ensureConversion(channelId, qualityLabel, streamUrl, qualityConfig);
     }
 
-    isManifestReady(channelId, qualityLabel, minSegments = 3) {
+    async isManifestReady(channelId, qualityLabel, minSegments = 3) {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
         if (!state) return false;
         const manifestPath = path.join(state.dir, 'index.m3u8');
-        if (!fs.existsSync(manifestPath)) return false;
         try {
-            const content = fs.readFileSync(manifestPath, 'utf8');
+            const content = await fs.promises.readFile(manifestPath, 'utf8');
             const segmentCount = (content.match(/#EXTINF:/g) || []).length;
             return segmentCount >= minSegments;
         } catch (e) {
@@ -342,7 +251,7 @@ class HlsConverter {
         }
         state.startNumber = startNumber;
 
-        const preset = this._resolvePreset(state.qualityLabel, state.qualityConfig);
+        const preset = resolvePreset(state.qualityLabel, state.qualityConfig, this.qualityPresets);
         const parsedUrl = new URL(state.streamUrl);
         const args = [];
 
@@ -527,7 +436,7 @@ class HlsConverter {
         }, checkInterval);
     }
 
-    getManifest(channelId, qualityLabel) {
+    async getManifest(channelId, qualityLabel) {
         const key = this._getKey(channelId, qualityLabel);
         const state = this.activeConversions.get(key);
         if (!state) return null;
@@ -541,12 +450,15 @@ class HlsConverter {
         }
 
         const manifestPath = path.join(state.dir, 'index.m3u8');
-        if (!fs.existsSync(manifestPath)) {
+
+        try {
+            await fs.promises.access(manifestPath);
+        } catch (e) {
             return null;
         }
 
         try {
-            const content = fs.readFileSync(manifestPath, 'utf8');
+            const content = await fs.promises.readFile(manifestPath, 'utf8');
             if (!content.includes('.ts')) {
                 return null;
             }
@@ -576,14 +488,14 @@ class HlsConverter {
         }
     }
 
-    waitForManifest(channelId, qualityLabel, timeoutMs) {
+    async waitForManifest(channelId, qualityLabel, timeoutMs) {
         const maxWait = timeoutMs || this.manifestWaitTimeout;
         const startTime = Date.now();
         const pollInterval = 500;
 
         return new Promise((resolve) => {
-            const poll = () => {
-                const manifest = this.getManifest(channelId, qualityLabel);
+            const poll = async () => {
+                const manifest = await this.getManifest(channelId, qualityLabel);
                 if (manifest) {
                     resolve(manifest);
                     return;
@@ -700,9 +612,10 @@ class HlsConverter {
 
     /**
      * Get segment data from in-memory cache, or read from disk and cache it.
-     * Returns { data: Buffer, size: number } or null if not found.
+     * Returns { data: Buffer, size: number, etag: string } or null if not found.
+     * The ETag is computed once on cache miss and stored alongside the segment.
      */
-    getSegmentData(channelId, qualityLabel, segmentName) {
+    async getSegmentData(channelId, qualityLabel, segmentName) {
         if (!segmentName.match(/^seq_\d+\.ts$/)) return null;
 
         const key = this._getKey(channelId, qualityLabel);
@@ -718,8 +631,9 @@ class HlsConverter {
         // Read from disk and cache
         const filePath = path.join(state.dir, segmentName);
         try {
-            const data = fs.readFileSync(filePath);
-            const entry = { data, size: data.length };
+            const data = await fs.promises.readFile(filePath);
+            const etag = '"' + crypto.createHash('md5').update(data).digest('hex') + '"';
+            const entry = { data, size: data.length, etag };
             state.segmentCache.set(segmentName, entry);
             return entry;
         } catch (e) {
