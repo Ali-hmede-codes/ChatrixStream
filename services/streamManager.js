@@ -49,6 +49,9 @@ class StreamManager {
 
         let isIntentionalAbort = false;
 
+        const strategy = sourceHandlers.resolveStrategy(state.streamUrl);
+        console.log(`Stream source connecting: ${state.streamUrl} (strategy: ${strategy})`);
+
         const handle = sourceHandlers.acquireSource(
             state.streamUrl,
             requestOptions,
@@ -61,7 +64,10 @@ class StreamManager {
 
                 if (res.statusCode !== 200) {
                     const via = finalUrl && finalUrl !== state.streamUrl ? ` (via ${state.streamUrl})` : '';
-                    console.error(`Stream source returned status ${res.statusCode} for ${finalUrl}${via}`);
+                    const serverHdr = res.headers['server'] || '';
+                    const cfRay = res.headers['cf-ray'] || '';
+                    const cfInfo = (serverHdr || cfRay) ? ` [server=${serverHdr}${cfRay ? ' cf-ray=' + cfRay : ''}]` : '';
+                    console.error(`Stream source returned status ${res.statusCode} for ${finalUrl}${via}${cfInfo}`);
                     res.resume();
                     this._scheduleReconnect(key);
                     return;

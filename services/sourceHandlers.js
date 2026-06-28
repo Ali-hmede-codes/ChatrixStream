@@ -57,6 +57,19 @@ function singleGet(url, headers, timeout) {
 const splitUaHosts = (process.env.SPLIT_UA_SOURCE_HOSTS || 'zooox.top')
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
 
+// ---------------------------------------------------------------------------
+// Strategy: browser User-Agent for the whole chain.
+//
+// Some origin backends reject media-player User-Agents (returning 509/406 to
+// VLC) but serve 200 to a browser UA. When the origin URL is configured
+// directly (bypassing a gateway), use this strategy so the request is made
+// with a browser UA and any redirects are followed with the same browser UA.
+//
+// Configure matching hosts via BROWSER_UA_SOURCE_HOSTS (comma-separated).
+// ---------------------------------------------------------------------------
+const browserUaHosts = (process.env.BROWSER_UA_SOURCE_HOSTS || '81.161.238.24')
+    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+
 function acquireSplitUa(streamUrl, options, onResponse, onError) {
     let destroyed = false;
     let responded = false;
@@ -123,13 +136,31 @@ function acquireDefault(streamUrl, options, onResponse, onError) {
     return { destroy: () => { try { req.destroy(); } catch (e) {} } };
 }
 
+// Browser-UA strategy: like default but forces a browser User-Agent on every
+// hop (follow-redirects preserves headers across redirects). Used for origins
+// that reject media-player UAs.
+function acquireBrowserUa(streamUrl, options, onResponse, onError) {
+    const mergedHeaders = Object.assign({}, options.headers, { 'User-Agent': BROWSER_UA });
+    const mergedOptions = Object.assign({}, options, { headers: mergedHeaders });
+    return acquireDefault(streamUrl, mergedOptions, onResponse, onError);
+}
+
 // Public entry point. Returns a handle with destroy() and invokes onResponse
 // with the final response (and its URL) or onError on failure.
 function acquireSource(streamUrl, options, onResponse, onError) {
     if (hostMatches(streamUrl, splitUaHosts)) {
         return acquireSplitUa(streamUrl, options, onResponse, onError);
     }
+    if (hostMatches(streamUrl, browserUaHosts)) {
+        return acquireBrowserUa(streamUrl, options, onResponse, onError);
+    }
     return acquireDefault(streamUrl, options, onResponse, onError);
 }
 
-module.exports = { acquireSource, hostMatches, BROWSER_UA, MEDIA_UA, splitUaHosts };
+function resolveStrategy(streamUrl) {
+    if (hostMatches(streamUrl, splitUaHosts)) return 'split-ua';
+    if (hostMatches(streamUrl, browserUaHosts)) return 'browser-ua';
+    return 'default';
+}
+
+module.exports = { acquireSource, hostMatches, resolveStrategy, BROWSER_UA, MEDIA_UA, splitUaHosts, browserUaHosts };
