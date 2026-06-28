@@ -47,6 +47,7 @@ const pipeConverter = new PipeConverter({
 });
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));

@@ -396,7 +396,6 @@ class HlsConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
-        args.push('-async', '1');
         args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
