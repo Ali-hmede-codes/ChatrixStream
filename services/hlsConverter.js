@@ -281,7 +281,6 @@ class HlsConverter {
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
-        args.push('-max_interleave_delta', '0');
         args.push('-i', urlWithoutCreds);
 
         if (preset.copyVideo) {
@@ -307,7 +306,7 @@ class HlsConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
-        args.push('-af', 'aresample=async=1000:first_pts=0');
+        args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
         args.push('-b:a', preset.audioBitrate);
@@ -326,7 +325,6 @@ class HlsConverter {
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+independent_segments+temp_file');
         args.push('-fflags', '+flush_packets');
         args.push('-hls_delete_threshold', '6');
-        args.push('-max_interleave_delta', '0');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');

@@ -216,7 +216,6 @@ class PipeConverter {
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
-        args.push('-max_interleave_delta', '0');
         args.push('-i', urlStr);
 
         if (preset.copyVideo) {
@@ -242,7 +241,7 @@ class PipeConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
-        args.push('-af', 'aresample=async=1000:first_pts=0');
+        args.push('-af', 'aresample=async=1000');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
         args.push('-b:a', preset.audioBitrate);
@@ -252,7 +251,6 @@ class PipeConverter {
         // flush_packets: flushes data immediately to minimize latency
         args.push('-mpegts_flags', '+resend_headers');
         args.push('-flush_packets', '1');
-        args.push('-max_interleave_delta', '0');
         args.push('-f', 'mpegts');
         args.push('pipe:1');
 
