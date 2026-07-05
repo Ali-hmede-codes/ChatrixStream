@@ -132,6 +132,17 @@ module.exports = function(db) {
             return res.json({ valid: false, error: result.error });
         }
 
+        // Lightweight mode: skip qualities fetch and viewer tracking.
+        // The periodic session check only needs to know if the session is valid.
+        // Skipping these synchronous DB queries prevents event-loop blocking
+        // that would stall HLS segment downloads and cause playback stutter.
+        if (req.query.light === '1') {
+            return res.json({
+                valid: true,
+                expires_at: result.expires_at
+            });
+        }
+
         const qualities = getQualitiesByChannel.all(result.channel_id);
         const qualitiesWithInfo = qualities.map(q => ({
             ...q,

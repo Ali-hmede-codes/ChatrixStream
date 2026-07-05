@@ -1198,7 +1198,7 @@
         if (sessionCheckInterval) clearInterval(sessionCheckInterval);
         sessionCheckInterval = setInterval(function() {
             if (!sessionData || sessionExpired) return;
-            fetch('/api/auth/session', {
+            fetch('/api/auth/session?light=1', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
@@ -1213,7 +1213,7 @@
     function checkSessionExpired() {
         if (sessionExpired) return Promise.resolve(true);
         if (!sessionData) return Promise.resolve(true);
-        return fetch('/api/auth/session', {
+        return fetch('/api/auth/session?light=1', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
