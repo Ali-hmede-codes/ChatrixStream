@@ -199,7 +199,19 @@
                             maxMaxBufferLength: 80,
                             liveSyncDurationCount: 3, // Starts slightly back for 6-10s buffer
                             liveMaxLatencyDurationCount: 15, // Allows more latency before forcing a seek
-                            enableWorker: true
+                            enableWorker: true,
+                            // Responsive segment loading — fail fast on slow segments
+                            // and retry quickly to minimize stall-then-burst patterns
+                            fragLoadingTimeOut: 10000, // 10s timeout (default 20s)
+                            fragLoadingMaxRetry: 4, // 4 retries (default 6)
+                            fragLoadingRetryDelay: 400, // 400ms between retries (default 1s)
+                            // Responsive manifest polling — detect new segments faster
+                            manifestLoadingTimeOut: 5000, // 5s timeout
+                            manifestLoadingMaxRetry: 3, // 3 retries
+                            manifestLoadingRetryDelay: 400, // 400ms between retries (default 1s)
+                            // Start loading segments with enough initial buffer
+                            // to absorb timing jitter in segment production
+                            startFragPrefetch: true
                         });
 
                         hlsInstance.on(Hls.Events.ERROR, function(event, data) {

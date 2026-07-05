@@ -443,9 +443,9 @@ class HlsConverter {
 
         this._recordAccess(key);
 
-        // Serve from in-memory cache if fresh (updated every 500ms max)
+        // Serve from in-memory cache if fresh (150ms TTL for faster segment discovery)
         const now = Date.now();
-        if (state.cachedManifest && state.manifestReady && (now - state.cachedManifestTime) < 500) {
+        if (state.cachedManifest && state.manifestReady && (now - state.cachedManifestTime) < 150) {
             return state.cachedManifest;
         }
 
