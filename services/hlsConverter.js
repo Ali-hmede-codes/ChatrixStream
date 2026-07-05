@@ -280,7 +280,6 @@ class HlsConverter {
         args.push('-reconnect_on_network_error', '1');
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
-        args.push('-max_delay', '0');
         args.push('-i', urlWithoutCreds);
 
         if (preset.copyVideo) {
