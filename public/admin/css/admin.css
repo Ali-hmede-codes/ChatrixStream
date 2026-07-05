@@ -239,6 +239,32 @@
     background: #27ae60;
 }
 
+.btn-warning {
+    padding: 8px 14px;
+    background: #f59e0b;
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: background var(--transition);
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
+.btn-warning:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+}
+
 #dashboard {
     min-height: 100vh;
 }
@@ -753,12 +779,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     margin-bottom: 16px;
 }
 
 .stream-channel-header h4 {
     font-size: 1.15rem;
     font-weight: 700;
+}
+
+.stream-channel-header .channel-id {
+    margin-right: auto;
+    margin-left: 8px;
 }
 
 .stream-qualities-list {

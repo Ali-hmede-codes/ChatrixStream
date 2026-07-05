@@ -238,6 +238,32 @@ class StreamManager {
         }
     }
 
+    /**
+     * Reconnect the source for all active streams of a given channel
+     * WITHOUT dropping connected clients. This forces a fresh connection
+     * to the upstream source URL, clearing any stale/buffered data.
+     * Returns the number of streams that were reconnected.
+     */
+    restartAllStreamsForChannel(channelId) {
+        const targetId = String(channelId);
+        let count = 0;
+        for (const [key, state] of this.activeStreams) {
+            if (String(state.channelId) === targetId) {
+                // Clear any pending reconnect timer so it doesn't interfere
+                if (state.reconnectTimer) {
+                    clearTimeout(state.reconnectTimer);
+                    state.reconnectTimer = null;
+                }
+                // Reconnect the source — this destroys the old source response/request
+                // and establishes a new connection, while keeping the PassThrough
+                // and all connected clients alive
+                this._connectSource(key);
+                count++;
+            }
+        }
+        return count;
+    }
+
     stopAll() {
         const keysToStop = Array.from(this.activeStreams.keys());
         for (const key of keysToStop) {

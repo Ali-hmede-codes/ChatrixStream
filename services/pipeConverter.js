@@ -104,6 +104,8 @@ class PipeConverter {
             restarting: false,
             started: false,
             ready: false,
+            lastDataTime: Date.now(),
+            watchdogTimer: null,
             // Rolling buffer: stores recent MPEG-TS data so new clients
             // can start playing immediately without waiting for a keyframe
             recentChunks: [],
@@ -140,10 +142,9 @@ class PipeConverter {
 
         state.clients.add(res);
 
-        // Cancel idle timer since we have an active client
-        if (state.idleTimer) {
-            clearTimeout(state.idleTimer);
-            state.idleTimer = null;
+        // Ensure the recurring idle+watchdog timer is running
+        if (!state.idleTimer) {
+            this._scheduleIdleCheck(this._getKey(channelId, qualityLabel));
         }
 
         res.on('close', () => this.removeClient(channelId, qualityLabel, res));
@@ -158,6 +159,8 @@ class PipeConverter {
         state.clients.delete(res);
 
         if (state.clients.size === 0) {
+            // Mark when the last client left so the idle check can fire
+            state.lastAccess = Date.now();
             this._scheduleIdleCheck(key);
         }
     }
@@ -201,7 +204,7 @@ class PipeConverter {
         args.push('-threads', '0');
         args.push('-thread_queue_size', '512');
         args.push('-user_agent', 'VLC/3.0.21 Vetinari');
-        args.push('-fflags', '+genpts+discardcorrupt+flush_packets');
+        args.push('-fflags', '+nobuffer+genpts+discardcorrupt+flush_packets');
         args.push('-analyzeduration', '1000000');
         args.push('-probesize', '1000000');
         args.push('-rw_timeout', '15000000');
@@ -213,6 +216,7 @@ class PipeConverter {
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
         args.push('-max_delay', '0');
+        args.push('-max_interleave_delta', '0');
         args.push('-i', urlStr);
 
         if (preset.copyVideo) {
@@ -238,7 +242,7 @@ class PipeConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
-        args.push('-af', 'aresample=async=1000');
+        args.push('-af', 'aresample=async=1000:first_pts=0');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
         args.push('-b:a', preset.audioBitrate);
@@ -248,6 +252,7 @@ class PipeConverter {
         // flush_packets: flushes data immediately to minimize latency
         args.push('-mpegts_flags', '+resend_headers');
         args.push('-flush_packets', '1');
+        args.push('-max_interleave_delta', '0');
         args.push('-f', 'mpegts');
         args.push('pipe:1');
 
@@ -258,9 +263,12 @@ class PipeConverter {
 
         // Fan out FFmpeg stdout data to all connected clients + rolling buffer
         proc.stdout.on('data', (chunk) => {
+            state.lastDataTime = Date.now();
             if (!state.ready) {
                 state.ready = true;
                 state.retryCount = 0;
+                // Start the recurring idle+watchdog timer
+                this._scheduleIdleCheck(key);
                 console.log('PipeConverter: stream ready for', key);
             }
 
@@ -338,13 +346,74 @@ class PipeConverter {
         if (!state) return;
         if (state.idleTimer) clearTimeout(state.idleTimer);
 
+        const checkInterval = 5000;
+
         state.idleTimer = setTimeout(() => {
-            state.idleTimer = null;
-            if (state.clients.size === 0) {
+            const currentState = this.activeStreams.get(key);
+            if (!currentState) return;
+            currentState.idleTimer = null;
+
+            const now = Date.now();
+
+            // Idle check — stop if no clients AND idle timeout has passed
+            // since the last client disconnected
+            if (currentState.clients.size === 0 && (now - currentState.lastAccess) > this.idleTimeout) {
                 console.log('PipeConverter: stream idle, stopping', key);
-                this.stopStream(state.channelId, state.qualityLabel);
+                this.stopStream(currentState.channelId, currentState.qualityLabel);
+                return;
             }
-        }, this.idleTimeout);
+
+            // Data-flow watchdog — if FFmpeg is alive but hasn't produced
+            // data in 15s, kill and restart it (stalled process detection)
+            if (currentState.ffmpegProcess && currentState.ready) {
+                if (now - currentState.lastDataTime > 15000) {
+                    console.log('PipeConverter: watchdog detected stalled stream (no data in 15s) for', key);
+                    try { currentState.ffmpegProcess.kill('SIGKILL'); } catch (e) { /* ignore */ }
+                }
+            }
+
+            this._scheduleIdleCheck(key);
+        }, checkInterval);
+    }
+
+    /**
+     * Restart a single stream's FFmpeg process without dropping connected clients.
+     * Clears the rolling buffer (old timestamps would confuse the player) and
+     * resets the retry counter so the restart isn't counted as a failure.
+     */
+    restartStream(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeStreams.get(key);
+        if (!state) return false;
+
+        console.log('PipeConverter: manual restart requested for', key);
+
+        // Clear any pending restart/idle timers so they don't interfere
+        if (state.restartTimer) {
+            clearTimeout(state.restartTimer);
+            state.restartTimer = null;
+        }
+        state.restarting = false;
+        state.retryCount = 0;
+
+        // Kill existing FFmpeg and start fresh
+        this._startFfmpeg(key);
+        return true;
+    }
+
+    /**
+     * Restart all FFmpeg processes for a given channel.
+     * Returns the number of streams that were restarted.
+     */
+    restartAllForChannel(channelId) {
+        const targetId = String(channelId);
+        let count = 0;
+        for (const [key, state] of this.activeStreams) {
+            if (String(state.channelId) === targetId) {
+                if (this.restartStream(state.channelId, state.qualityLabel)) count++;
+            }
+        }
+        return count;
     }
 
     stopStream(channelId, qualityLabel) {
@@ -354,6 +423,7 @@ class PipeConverter {
 
         if (state.idleTimer) clearTimeout(state.idleTimer);
         if (state.restartTimer) clearTimeout(state.restartTimer);
+        if (state.watchdogTimer) { clearTimeout(state.watchdogTimer); state.watchdogTimer = null; }
 
         if (state.ffmpegProcess) {
             try {

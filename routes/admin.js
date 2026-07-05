@@ -198,6 +198,28 @@ module.exports = function(db, streamManager, hlsConverter, pipeConverter) {
         res.json({ channel_token: newToken });
     });
 
+    // Restart all restream processes (source + FFmpeg) for a channel.
+    // This does NOT disconnect viewers — it reconnects the source and
+    // restarts FFmpeg so the stream recovers from lag/stall/audio-desync.
+    router.post('/channels/:id/restart-stream', (req, res) => {
+        const { id } = req.params;
+        const channel = getChannelById.get(id);
+        if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+        const channelId = parseInt(id);
+        const sourceCount = streamManager.restartAllStreamsForChannel(channelId);
+        const hlsCount = hlsConverter ? hlsConverter.restartAllForChannel(channelId) : 0;
+        const pipeCount = pipeConverter ? pipeConverter.restartAllForChannel(channelId) : 0;
+
+        console.log(`Restart-stream for channel ${id}: source=${sourceCount}, hls=${hlsCount}, pipe=${pipeCount}`);
+        res.json({
+            restarted: true,
+            source_streams: sourceCount,
+            hls_streams: hlsCount,
+            pipe_streams: pipeCount
+        });
+    });
+
     router.post('/channels/:id/qualities', (req, res) => {
         const { id } = req.params;
         const { quality_label, stream_url, sort_order, preset_key, video_codec, video_bitrate, video_maxrate, video_bufsize, video_preset, video_profile, video_level, video_resolution, audio_bitrate, audio_channels, audio_rate, segment_duration } = req.body;

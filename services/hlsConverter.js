@@ -280,6 +280,8 @@ class HlsConverter {
         args.push('-reconnect_on_network_error', '1');
         args.push('-reconnect_on_http_error', '4xx,5xx');
         args.push('-avoid_negative_ts', 'make_zero');
+        args.push('-max_delay', '0');
+        args.push('-max_interleave_delta', '0');
         args.push('-i', urlWithoutCreds);
 
         if (preset.copyVideo) {
@@ -305,7 +307,7 @@ class HlsConverter {
 
         args.push('-c:a', 'aac');
         args.push('-threads:a', '0');
-        args.push('-af', 'aresample=async=1000');
+        args.push('-af', 'aresample=async=1000:first_pts=0');
         args.push('-ar', String(preset.audioRate));
         args.push('-ac', String(preset.audioChannels));
         args.push('-b:a', preset.audioBitrate);
@@ -324,6 +326,7 @@ class HlsConverter {
         args.push('-hls_flags', 'delete_segments+program_date_time+omit_endlist+independent_segments+temp_file');
         args.push('-fflags', '+flush_packets');
         args.push('-hls_delete_threshold', '6');
+        args.push('-max_interleave_delta', '0');
 
         const manifestPath = path.join(state.dir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = path.join(state.dir, 'seq_%d.ts').replace(/\\/g, '/');
@@ -671,6 +674,63 @@ class HlsConverter {
 
         this.activeConversions.delete(key);
         console.log('HlsConverter: stopped conversion for', key);
+    }
+
+    /**
+     * Restart a single conversion's FFmpeg process without dropping the state.
+     * Increments the discontinuity counter so the player can handle the gap,
+     * clears in-memory caches (stale segments/manifest), and resets the retry
+     * counter so the restart isn't counted as a failure.
+     * Returns true if the conversion was found and restarted, false otherwise.
+     */
+    restartConversion(channelId, qualityLabel) {
+        const key = this._getKey(channelId, qualityLabel);
+        const state = this.activeConversions.get(key);
+        if (!state) return false;
+
+        console.log('HlsConverter: manual restart requested for', key);
+
+        // Clear any pending restart timer so it doesn't interfere
+        if (state.restartTimer) {
+            clearTimeout(state.restartTimer);
+            state.restartTimer = null;
+        }
+        state.restarting = false;
+        state.retryCount = 0;
+
+        // Clear in-memory caches — old segments/manifest are stale after restart
+        state.cachedManifest = null;
+        state.segmentCache.clear();
+        state.manifestReady = false;
+
+        // Restart FFmpeg (increments discontinuityCount, clears old manifest)
+        this._startFfmpeg(key);
+
+        // Restart the startup timeout since we're waiting for a new manifest
+        if (state.startupTimer) clearTimeout(state.startupTimer);
+        state.startupTimer = setTimeout(() => {
+            if (this.activeConversions.has(key) && !state.manifestReady) {
+                console.log('HlsConverter: startup timeout after manual restart, no manifest for', key);
+                this.stopConversion(state.channelId, state.qualityLabel);
+            }
+        }, this.startupTimeout);
+
+        return true;
+    }
+
+    /**
+     * Restart all FFmpeg conversions for a given channel.
+     * Returns the number of conversions that were restarted.
+     */
+    restartAllForChannel(channelId) {
+        const targetId = String(channelId);
+        let count = 0;
+        for (const [key, state] of this.activeConversions) {
+            if (String(state.channelId) === targetId) {
+                if (this.restartConversion(state.channelId, state.qualityLabel)) count++;
+            }
+        }
+        return count;
     }
 
     stopAllForChannel(channelId) {

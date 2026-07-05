@@ -297,6 +297,7 @@
                 '<div class="stream-channel-header">' +
                     '<h4>' + ch.name + '</h4>' +
                     '<span class="channel-id">ID: ' + ch.id + '</span>' +
+                    '<button class="btn-warning btn-sm" data-action="restart-stream" data-id="' + ch.id + '">' + t('restart_stream') + '</button>' +
                 '</div>' +
                 '<div class="stream-qualities-list" id="stream-qualities-' + ch.id + '">' +
                     (sorted.length === 0
@@ -549,7 +550,10 @@
                     '</div>' +
                 '</div>' +
                 '<div class="channel-section">' +
-                    '<button class="btn-danger" data-action="delete-channel" data-id="' + channel.id + '">Delete Channel</button>' +
+                    '<button class="btn-warning" data-action="restart-stream" data-id="' + channel.id + '">' + t('restart_stream') + '</button>' +
+                '</div>' +
+                '<div class="channel-section">' +
+                    '<button class="btn-danger" data-action="delete-channel" data-id="' + channel.id + '">' + t('delete_channel') + '</button>' +
                 '</div>' +
             '</div>';
 
@@ -953,6 +957,29 @@
             await adminFetch('/codes/' + btn.dataset.code, { method: 'DELETE' });
             showToast(t('code_revoked'), 'success');
             loadChannels();
+            return;
+        }
+
+        if (action === 'restart-stream') {
+            if (!confirm(t('restart_stream_confirm'))) return;
+            var btnEl = btn;
+            var originalText = btnEl.innerHTML;
+            btnEl.disabled = true;
+            btnEl.innerHTML = '...';
+            try {
+                var result = await adminFetch('/channels/' + btn.dataset.id + '/restart-stream', { method: 'POST' });
+                var total = (result.source_streams || 0) + (result.hls_streams || 0) + (result.pipe_streams || 0);
+                if (total === 0) {
+                    showToast(t('restart_stream_no_active'), 'info');
+                } else {
+                    showToast(t('restart_stream_success'), 'success');
+                }
+            } catch (e) {
+                showToast(e.message || 'Failed to restart stream', 'error');
+            } finally {
+                btnEl.disabled = false;
+                btnEl.innerHTML = originalText;
+            }
             return;
         }
 
