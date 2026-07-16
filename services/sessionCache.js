@@ -16,7 +16,20 @@ class SessionCache {
         }
 
         const result = validateSession(this.db, sessionToken);
-        this.cache.set(sessionToken, { result, timestamp: now });
+
+        // Only cache POSITIVE (valid) results.
+        // Negative results (expired / not found) are NOT cached because they
+        // may be caused by transient issues (brief DB lock, race condition
+        // with cleanupExpired, etc.).  Caching a false "expired" would block
+        // every request for the full TTL window (15-30 s) and kick viewers
+        // off a stream that is actually still valid.
+        if (result.valid) {
+            this.cache.set(sessionToken, { result, timestamp: now });
+        } else {
+            // Remove any previously-cached valid entry so the next request
+            // re-validates against the database.
+            this.cache.delete(sessionToken);
+        }
 
         if (this.cache.size > this.maxSize) {
             for (const [key, val] of this.cache) {

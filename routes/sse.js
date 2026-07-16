@@ -27,15 +27,33 @@ module.exports = function(db) {
         res.write('event: connected\ndata: ' + JSON.stringify({ channel_token: session.channel_token, channel_name: session.channel_name, expires_at: session.expires_at }) + '\n\n');
 
         let checkTimer = null;
+        let consecutiveFailures = 0;
 
         function checkSession() {
-            const result = validateSession(db, sessionToken);
+            let result;
+            try {
+                result = validateSession(db, sessionToken);
+            } catch (e) {
+                // DB error (e.g. brief lock) — don't crash, don't count as failure
+                console.error('SSE session check error:', e.message);
+                checkTimer = setTimeout(checkSession, CHECK_INTERVAL_MS);
+                return;
+            }
             if (!result.valid) {
+                consecutiveFailures++;
+                if (consecutiveFailures < 2) {
+                    // Tolerate a single transient failure — re-check sooner
+                    console.warn('SSE: session check failed once -', result.error, '(will retry)');
+                    checkTimer = setTimeout(checkSession, CHECK_INTERVAL_MS);
+                    return;
+                }
                 res.write('event: session_expired\ndata: ' + JSON.stringify({ error: result.error }) + '\n\n');
                 cleanup();
                 res.end();
                 return;
             }
+
+            consecutiveFailures = 0;
 
             const expires = new Date(result.expires_at);
             const now = new Date();

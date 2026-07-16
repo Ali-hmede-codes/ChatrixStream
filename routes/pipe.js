@@ -59,14 +59,30 @@ module.exports = function(db, pipeConverter) {
 
         // Periodically re-validate session for this long-lived connection.
         // If the session expires mid-stream, terminate the connection.
+        // Require 2 consecutive failures before terminating to tolerate
+        // transient DB errors or race conditions with cleanupExpired.
+        let consecutiveFailures = 0;
         let sessionCheckTimer = setInterval(() => {
-            const result = sessionCache.get(sessionToken);
+            let result;
+            try {
+                result = sessionCache.get(sessionToken);
+            } catch (e) {
+                console.error('Pipe session check error:', e.message);
+                return;
+            }
             if (!result.valid) {
+                consecutiveFailures++;
+                if (consecutiveFailures < 2) {
+                    console.warn('Pipe: session check failed once for channel', channel.id, '-', result.error, '(will retry)');
+                    return;
+                }
                 console.log('Pipe: session expired mid-stream for channel', channel.id);
                 clearInterval(sessionCheckTimer);
                 sessionCheckTimer = null;
                 pipeConverter.removeClient(channel.id, quality.quality_label, res);
                 res.end();
+            } else {
+                consecutiveFailures = 0;
             }
         }, SESSION_CHECK_MS);
 

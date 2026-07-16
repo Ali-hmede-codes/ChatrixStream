@@ -157,6 +157,7 @@ app.use((err, req, res, next) => {
 });
 
 function cleanupExpired() {
+  try {
     const now = new Date().toISOString();
 
     const expiredSessions = db.prepare('SELECT channel_id FROM sessions WHERE expires_at < ?').all(now);
@@ -187,6 +188,9 @@ function cleanupExpired() {
     }
 
     console.log('Cleanup: removed expired records at ' + now);
+  } catch (e) {
+    console.error('Cleanup error (non-fatal):', e.message);
+  }
 }
 
 setInterval(cleanupExpired, 5 * 60 * 1000);

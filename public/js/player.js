@@ -14,6 +14,7 @@
     let consecutiveNetworkErrors = 0;
     let sessionCheckInterval = null;
     let sessionExpired = false;
+    let sessionCheckFailures = 0;
     let wasPlayingBeforeHidden = false;
     let bandwidthEstimate = null;
     let bufferingDebounceTimer = null;
@@ -609,7 +610,12 @@
                 if (code === 2 || code === 4) {
                     var is403 = message.indexOf('403') !== -1 || message.indexOf('Forbidden') !== -1;
                     if (is403) {
-                        handleSessionExpired('Session expired');
+                        // Session was verified valid above, so a 403 here is
+                        // likely transient (stale cache, brief DB lock, etc.).
+                        // Treat as a network error and reconnect instead of
+                        // kicking the viewer off.
+                        console.warn('Got 403 but session is valid, reconnecting...');
+                        scheduleReconnect();
                         return;
                     }
                 }
@@ -1184,7 +1190,13 @@
 
         sseConnection.addEventListener('session_expired', function(e) {
             var data = JSON.parse(e.data);
-            handleSessionExpired(data.error || 'Your access has expired. Please enter a new invite code.');
+            // Verify with a direct API call — the SSE event could be a
+            // false positive from a transient server-side issue.
+            checkSessionExpired().then(function(expired) {
+                if (expired) {
+                    handleSessionExpired(data.error || 'Your access has expired. Please enter a new invite code.');
+                }
+            });
         });
 
         sseConnection.addEventListener('expiring_soon', function(e) {
@@ -1216,7 +1228,12 @@
                 body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
             }).then(function(res) { return res.json(); }).then(function(result) {
                 if (!result.valid) {
-                    handleSessionExpired(result.error || 'Session expired');
+                    sessionCheckFailures++;
+                    if (sessionCheckFailures >= 2) {
+                        handleSessionExpired(result.error || 'Session expired');
+                    }
+                } else {
+                    sessionCheckFailures = 0;
                 }
             }).catch(function() {});
         }, 30000);
@@ -1230,6 +1247,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_token: sessionData.session_token, viewer_id: getViewerId() })
         }).then(function(res) { return res.json(); }).then(function(result) {
+            if (result.valid) sessionCheckFailures = 0;
             return !result.valid;
         }).catch(function() {
             return false;

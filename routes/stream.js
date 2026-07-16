@@ -50,14 +50,31 @@ module.exports = function(db, streamManager) {
 
         // Periodically re-validate session for this long-lived stream connection.
         // If the session or channel link expires mid-stream, kill the connection.
+        // Require 2 consecutive failures before terminating to tolerate
+        // transient DB errors or race conditions with cleanupExpired.
+        let consecutiveFailures = 0;
         let sessionCheckTimer = setInterval(() => {
-            const result = validateSession(db, sessionToken);
+            let result;
+            try {
+                result = validateSession(db, sessionToken);
+            } catch (e) {
+                // DB error (e.g. brief lock) — don't crash, don't count as failure
+                console.error('Stream session check error:', e.message);
+                return;
+            }
             if (!result.valid) {
+                consecutiveFailures++;
+                if (consecutiveFailures < 2) {
+                    console.warn('Stream session check failed once for channel', channel.id, '-', result.error, '(will retry)');
+                    return;
+                }
                 console.log('Stream session expired mid-stream for channel', channel.id, '- terminating connection');
                 clearInterval(sessionCheckTimer);
                 sessionCheckTimer = null;
                 streamManager.removeClient(channel.id, quality.quality_label, res);
                 res.end();
+            } else {
+                consecutiveFailures = 0;
             }
         }, STREAM_SESSION_CHECK_MS);
 
