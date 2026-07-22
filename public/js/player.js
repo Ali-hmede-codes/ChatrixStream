@@ -37,6 +37,10 @@
     let LIVE_EDGE_HARD_THRESHOLD = 10;
     let CATCHUP_PLAYBACK_RATE = 1.08;
     let NORMAL_PLAYBACK_RATE = 1.0;
+    let consecutiveDecodeErrors = 0;
+    let MAX_DECODE_ERRORS = 3;
+    let videoSourceGeneration = 0;
+    let isRecoveringFromError = false;
 
     var usePipeMode = false;
     var mpegtsPlayerInstance = null;
@@ -215,6 +219,7 @@
                             startFragPrefetch: true
                         });
 
+                        var hlsMediaErrorRecoveries = 0;
                         hlsInstance.on(Hls.Events.ERROR, function(event, data) {
                             if (data.fatal) {
                                 console.error('HLS error:', data);
@@ -223,7 +228,18 @@
                                         videoEl.dispatchEvent(new Event('error'));
                                         break;
                                     case Hls.ErrorTypes.MEDIA_ERROR:
-                                        hlsInstance.recoverMediaError();
+                                        hlsMediaErrorRecoveries++;
+                                        if (hlsMediaErrorRecoveries <= 2) {
+                                            console.warn('HLS fatal media error, attempting recovery (attempt ' + hlsMediaErrorRecoveries + ')');
+                                            if (hlsMediaErrorRecoveries === 2) {
+                                                hlsInstance.swapAudioCodec();
+                                            }
+                                            hlsInstance.recoverMediaError();
+                                        } else {
+                                            console.error('HLS media error recovery exhausted, dispatching error');
+                                            hlsInstance.destroy();
+                                            videoEl.dispatchEvent(new Event('error'));
+                                        }
                                         break;
                                     default:
                                         hlsInstance.destroy();
@@ -543,6 +559,8 @@
             reconnectAttempts = 0;
             reconnectBackoff = 2000;
             stallCount = 0;
+            consecutiveDecodeErrors = 0;
+            isRecoveringFromError = false;
             var tech = vjsPlayer.tech({ IWillNotUseThisInPlugins: true });
             if (tech && tech.vhs && tech.vhs.bandwidth) {
                 bandwidthEstimate = tech.vhs.bandwidth;
@@ -593,6 +611,7 @@
 
         vjsPlayer.on('error', function() {
             if (sessionExpired) return;
+            if (isRecoveringFromError) return;
 
             var error = vjsPlayer.error();
             if (!error) return;
@@ -625,10 +644,33 @@
                     console.warn('Network error, reconnecting... (attempt ' + consecutiveNetworkErrors + ')');
                     scheduleReconnect();
                 } else if (code === 3) {
-                    console.warn('Decode error, doing soft source reload...');
-                    softResetPlayer();
-                    vjsPlayer.reset();
-                    startStream(currentQuality);
+                    consecutiveDecodeErrors++;
+                    console.warn('Decode error, doing soft source reload... (attempt ' + consecutiveDecodeErrors + '/' + MAX_DECODE_ERRORS + ')');
+
+                    if (consecutiveDecodeErrors > MAX_DECODE_ERRORS) {
+                        var lowerQuality = getQualityLower(currentQuality);
+                        if (lowerQuality) {
+                            console.warn('Max decode errors reached, downgrading to ' + lowerQuality);
+                            consecutiveDecodeErrors = 0;
+                            isRecoveringFromError = false;
+                            switchQuality(lowerQuality);
+                        } else {
+                            console.error('Max decode errors reached and no lower quality available');
+                            destroyPlayer();
+                            showError('Stream Error', 'Unable to decode this stream. The channel may use an unsupported codec. Try a lower quality.');
+                        }
+                        return;
+                    }
+
+                    isRecoveringFromError = true;
+                    var decodeDelay = Math.min(1000 * Math.pow(2, consecutiveDecodeErrors - 1), 8000);
+                    setTimeout(function() {
+                        isRecoveringFromError = false;
+                        if (sessionExpired || !currentQuality) return;
+                        softResetPlayer();
+                        vjsPlayer.reset();
+                        startStream(currentQuality);
+                    }, decodeDelay);
                 } else if (code === 4) {
                     // Check if this is a 503 (stream not ready) — retryable
                     var is503 = message.indexOf('503') !== -1 || message.indexOf('Service Unavailable') !== -1;
@@ -882,6 +924,16 @@
             mpegtsPlayerInstance.load();
 
             videoEl.play().catch(function(err) {
+                var errName = err && err.name ? err.name : '';
+                if (errName === 'AbortError') {
+                    console.warn('play() interrupted (AbortError), retrying...');
+                    setTimeout(function() {
+                        if (!sessionExpired && videoEl.paused) {
+                            videoEl.play().catch(function() {});
+                        }
+                    }, 300);
+                    return;
+                }
                 console.warn('Autoplay blocked:', err);
                 videoEl.muted = true;
                 unmuteBtn.classList.remove('hidden');
@@ -893,15 +945,37 @@
         // HLS mode: use Video.js source
         var hlsUrl = getHlsUrl(quality);
 
+        var gen = ++videoSourceGeneration;
+
         vjsPlayer.src({
             src: hlsUrl,
             type: 'application/x-mpegURL'
         });
 
-        vjsPlayer.ready(function() {
-            vjsPlayer.play().catch(function(err) {
-                console.warn('Autoplay blocked:', err);
+        // Wait for 'canplay' before calling play() to avoid the race condition
+        // where play() is interrupted by hls.js media attachment/reset (AbortError).
+        var onCanPlay = function() {
+            videoEl.removeEventListener('canplay', onCanPlay);
+            if (gen !== videoSourceGeneration) return;
+            if (sessionExpired) return;
 
+            vjsPlayer.play().catch(function(err) {
+                var errName = err && err.name ? err.name : '';
+
+                // AbortError: play() interrupted by pause() — transient race,
+                // NOT an autoplay policy block. Retry once after a short delay.
+                if (errName === 'AbortError') {
+                    console.warn('play() interrupted (AbortError), retrying...');
+                    setTimeout(function() {
+                        if (gen === videoSourceGeneration && !sessionExpired && vjsPlayer.paused()) {
+                            vjsPlayer.play().catch(function() {});
+                        }
+                    }, 300);
+                    return;
+                }
+
+                // NotAllowedError: actual autoplay blocked by browser policy
+                console.warn('Autoplay blocked:', err);
                 if (isIOS() || isSafari()) {
                     showTapToPlay();
                 } else {
@@ -910,7 +984,24 @@
                     vjsPlayer.play().catch(function() {});
                 }
             });
-        });
+        };
+
+        videoEl.addEventListener('canplay', onCanPlay);
+
+        // If the video element is already ready (edge case), call play immediately
+        if (videoEl.readyState >= 2) {
+            onCanPlay();
+        }
+
+        // Safety timeout: if canplay doesn't fire within 15s, attempt play() anyway
+        setTimeout(function() {
+            videoEl.removeEventListener('canplay', onCanPlay);
+            if (gen !== videoSourceGeneration) return;
+            if (sessionExpired) return;
+            if (!vjsPlayer.paused()) return;
+            console.warn('canplay timeout, attempting play() anyway');
+            vjsPlayer.play().catch(function() {});
+        }, 15000);
     }
 
     function showTapToPlay() {
@@ -948,6 +1039,7 @@
         }
         reconnectBackoff = 2000;
         reconnectAttempts = 0;
+        isRecoveringFromError = false;
 
         // Cleanup mpegts.js instance if in pipe mode
         if (mpegtsPlayerInstance) {
