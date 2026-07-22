@@ -898,18 +898,49 @@
             type: 'application/x-mpegURL'
         });
 
-        vjsPlayer.ready(function() {
-            vjsPlayer.play().catch(function(err) {
-                console.warn('Autoplay blocked:', err);
+        // Wait until the media element is actually ready before starting
+        // playback. Calling play() immediately after src() races with
+        // hls.js's asynchronous media attachment (attachMedia swaps in a new
+        // MediaSource on the element), which interrupts the pending play()
+        // with an AbortError ("The play() request was interrupted by a call
+        // to pause()"). Triggering play() on 'canplay' avoids that race.
+        startPlaybackWhenReady();
+    }
 
-                if (isIOS() || isSafari()) {
-                    showTapToPlay();
-                } else {
-                    vjsPlayer.muted(true);
-                    unmuteBtn.classList.remove('hidden');
-                    vjsPlayer.play().catch(function() {});
-                }
-            });
+    function onCanPlayStart() {
+        attemptPlayback();
+    }
+
+    function startPlaybackWhenReady() {
+        // Drop any stale listener left over from a previous source setup
+        videoEl.removeEventListener('canplay', onCanPlayStart);
+        if (videoEl.readyState >= 3) {
+            attemptPlayback();
+        } else {
+            videoEl.addEventListener('canplay', onCanPlayStart, { once: true });
+        }
+    }
+
+    function attemptPlayback() {
+        if (!vjsPlayer) return;
+        var playPromise = vjsPlayer.play();
+        if (!playPromise || typeof playPromise.catch !== 'function') return;
+        playPromise.catch(function(err) {
+            // AbortError: playback start was interrupted by a new load or a
+            // pause during source setup (common with hls.js attachMedia).
+            // This is transient — the 'canplay' listener will start playback
+            // once the media is ready, so don't treat it as an autoplay block.
+            if (err && err.name === 'AbortError') return;
+
+            // Genuine autoplay restriction (e.g. NotAllowedError)
+            console.warn('Autoplay blocked:', err);
+            if (isIOS() || isSafari()) {
+                showTapToPlay();
+            } else {
+                vjsPlayer.muted(true);
+                unmuteBtn.classList.remove('hidden');
+                vjsPlayer.play().catch(function() {});
+            }
         });
     }
 
